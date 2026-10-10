@@ -7,9 +7,9 @@ import com.mojang.blaze3d.platform.DepthTestFunction;
 import com.mojang.blaze3d.vertex.VertexFormat;
 import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderContext;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.gl.RenderPipelines;
 import net.minecraft.client.network.AbstractClientPlayerEntity;
 import net.minecraft.client.render.RenderLayer;
-import net.minecraft.client.gl.RenderPipelines;
 import net.minecraft.client.render.RenderSetup;
 import net.minecraft.client.render.VertexConsumer;
 import net.minecraft.client.render.VertexConsumerProvider;
@@ -25,6 +25,8 @@ public final class EspRenderer {
     private static final int RING_SEG = 64;
     private static final float HAT_RADIUS = 0.55f;
     private static final float HAT_HEIGHT = 0.3f;
+
+    public static AbstractClientPlayerEntity currentTarget = null;
 
     private static RenderPipeline pipeline(String name, VertexFormat.DrawMode mode) {
         return RenderPipelines.register(
@@ -50,7 +52,8 @@ public final class EspRenderer {
     }
 
     public static void render(WorldRenderContext ctx) {
-        if (!Settings.esp && !Settings.targetEsp && !Settings.hat) return;
+        currentTarget = null;
+        if (!Settings.esp && !Settings.targetEsp && !Settings.hat && !Settings.targetHud) return;
         MinecraftClient mc = MinecraftClient.getInstance();
         if (mc.player == null || mc.world == null) return;
         init();
@@ -75,12 +78,12 @@ public final class EspRenderer {
                 target = p;
             }
         }
+        currentTarget = target;
 
         VertexConsumerProvider consumers = ctx.consumers();
         Matrix4f m = ctx.matrices().peek().getPositionMatrix();
         float time = (System.currentTimeMillis() % 4000L) / 4000.0f;
 
-        // ---- boxes + target ring (QUADS layer) ----
         VertexConsumer quads = consumers.getBuffer(BOX_LAYER);
         if (Settings.esp) {
             float[] c = Settings.ESP_RGB[Settings.espColor];
@@ -96,7 +99,14 @@ public final class EspRenderer {
                 float x = (float) (pos.x - cam.x);
                 float y = (float) (pos.y - cam.y);
                 float z = (float) (pos.z - cam.z);
-                drawBox(quads, m, x - hw, y, z - hw, x + hw, y + p.getHeight(), z + hw, r, g, b, 0.25f);
+                float x1 = x - hw, y1 = y, z1 = z - hw;
+                float x2 = x + hw, y2 = y + p.getHeight(), z2 = z + hw;
+                if (Settings.boxStyle == 0 || Settings.boxStyle == 2) {
+                    drawBox(quads, m, x1, y1, z1, x2, y2, z2, r, g, b, 0.25f);
+                }
+                if (Settings.boxStyle == 1 || Settings.boxStyle == 2) {
+                    drawEdges(quads, m, x1, y1, z1, x2, y2, z2, r, g, b, 0.95f, 0.02f);
+                }
             }
         }
         if (Settings.targetEsp && target != null) {
@@ -117,7 +127,6 @@ public final class EspRenderer {
         }
         if (consumers instanceof VertexConsumerProvider.Immediate imm) imm.draw(BOX_LAYER);
 
-        // ---- hat (TRIANGLES layer) ----
         if (Settings.hat) {
             VertexConsumer hat = consumers.getBuffer(HAT_LAYER);
             for (AbstractClientPlayerEntity p : mc.world.getPlayers()) {
@@ -145,8 +154,12 @@ public final class EspRenderer {
         return MathHelper.hsvToRgb(hue, 1.0f, 1.0f);
     }
 
-    private static void vtx(VertexConsumer vc, Matrix4f m, float x, float y, float z, int rgb, float a) {
-        vc.vertex(m, x, y, z).color(rgb(rgb, 16), rgb(rgb, 8), rgb(rgb, 0), a);
+    private static float rgb(int c, int shift) {
+        return ((c >> shift) & 0xFF) / 255.0f;
+    }
+
+    private static void vtx(VertexConsumer vc, Matrix4f m, float x, float y, float z, int c, float a) {
+        vc.vertex(m, x, y, z).color(rgb(c, 16), rgb(c, 8), rgb(c, 0), a);
     }
 
     private static void drawRing(VertexConsumer vc, Matrix4f m, float cx, float y, float cz,
@@ -180,10 +193,6 @@ public final class EspRenderer {
         }
     }
 
-    private static float rgb(int c, int shift) {
-        return ((c >> shift) & 0xFF) / 255.0f;
-    }
-
     private static void q(VertexConsumer vc, Matrix4f m, float r, float g, float b, float a,
                           float x1, float y1, float z1, float x2, float y2, float z2,
                           float x3, float y3, float z3, float x4, float y4, float z4) {
@@ -202,5 +211,28 @@ public final class EspRenderer {
         q(vc, m, r, g, b, a, x1, y1, z2, x2, y1, z2, x2, y2, z2, x1, y2, z2);
         q(vc, m, r, g, b, a, x1, y1, z1, x1, y1, z2, x1, y2, z2, x1, y2, z1);
         q(vc, m, r, g, b, a, x2, y1, z1, x2, y2, z1, x2, y2, z2, x2, y1, z2);
+    }
+
+    private static void drawEdges(VertexConsumer vc, Matrix4f m,
+                                  float x1, float y1, float z1, float x2, float y2, float z2,
+                                  float r, float g, float b, float a, float t) {
+        float[] ys = {y1, y2};
+        float[] zs = {z1, z2};
+        float[] xs = {x1, x2};
+        for (float yy : ys) {
+            for (float zz : zs) {
+                drawBox(vc, m, x1, yy - t, zz - t, x2, yy + t, zz + t, r, g, b, a);
+            }
+        }
+        for (float xx : xs) {
+            for (float zz : zs) {
+                drawBox(vc, m, xx - t, y1, zz - t, xx + t, y2, zz + t, r, g, b, a);
+            }
+        }
+        for (float xx : xs) {
+            for (float yy : ys) {
+                drawBox(vc, m, xx - t, yy - t, z1, xx + t, yy + t, z2, r, g, b, a);
+            }
+        }
     }
 }
