@@ -26,8 +26,6 @@ public final class EspRenderer {
     private static final float HAT_RADIUS = 0.55f;
     private static final float HAT_HEIGHT = 0.3f;
 
-    public static AbstractClientPlayerEntity currentTarget = null;
-
     private static RenderPipeline pipeline(String name, VertexFormat.DrawMode mode) {
         return RenderPipelines.register(
                 RenderPipeline.builder(RenderPipelines.POSITION_COLOR_SNIPPET)
@@ -52,8 +50,7 @@ public final class EspRenderer {
     }
 
     public static void render(WorldRenderContext ctx) {
-        currentTarget = null;
-        if (!Settings.esp && !Settings.targetEsp && !Settings.hat && !Settings.targetHud) return;
+        if (!Settings.esp && !Settings.targetEsp && !Settings.hat) return;
         MinecraftClient mc = MinecraftClient.getInstance();
         if (mc.player == null || mc.world == null) return;
         init();
@@ -67,6 +64,7 @@ public final class EspRenderer {
         double best = TARGET_DOT;
         for (AbstractClientPlayerEntity p : mc.world.getPlayers()) {
             if (p == mc.player) continue;
+            if (p.isInvisible() && !Settings.showInvisible) continue;
             Vec3d pos = p.getLerpedPos(tickProgress);
             Vec3d center = pos.add(0, p.getHeight() / 2.0, 0);
             Vec3d to = center.subtract(cam);
@@ -78,7 +76,6 @@ public final class EspRenderer {
                 target = p;
             }
         }
-        currentTarget = target;
 
         VertexConsumerProvider consumers = ctx.consumers();
         Matrix4f m = ctx.matrices().peek().getPositionMatrix();
@@ -89,12 +86,17 @@ public final class EspRenderer {
             float[] c = Settings.ESP_RGB[Settings.espColor];
             for (AbstractClientPlayerEntity p : mc.world.getPlayers()) {
                 if (p == mc.player) continue;
+                if (p.isInvisible() && !Settings.showInvisible) continue;
                 Vec3d pos = p.getLerpedPos(tickProgress);
                 if (pos.distanceTo(cam) > range) continue;
-                boolean isTarget = p == target;
-                float r = isTarget ? 1.0f : c[0];
-                float g = isTarget ? 0.1f : c[1];
-                float b = isTarget ? 0.1f : c[2];
+                float r, g, b;
+                if (p == target) {
+                    r = 1.0f; g = 0.1f; b = 0.1f;
+                } else if (p.isInvisible()) {
+                    r = 1.0f; g = 1.0f; b = 0.3f;
+                } else {
+                    r = c[0]; g = c[1]; b = c[2];
+                }
                 float hw = p.getWidth() / 2.0f;
                 float x = (float) (pos.x - cam.x);
                 float y = (float) (pos.y - cam.y);
@@ -127,18 +129,14 @@ public final class EspRenderer {
         }
         if (consumers instanceof VertexConsumerProvider.Immediate imm) imm.draw(BOX_LAYER);
 
-        if (Settings.hat) {
+        // China hat: only on ME, and only in third person
+        if (Settings.hat && !mc.options.getPerspective().isFirstPerson()) {
             VertexConsumer hat = consumers.getBuffer(HAT_LAYER);
-            for (AbstractClientPlayerEntity p : mc.world.getPlayers()) {
-                if (p == mc.player) continue;
-                if (!Settings.hatAll && p != target) continue;
-                Vec3d pos = p.getLerpedPos(tickProgress);
-                if (pos.distanceTo(cam) > range) continue;
-                float cx = (float) (pos.x - cam.x);
-                float baseY = (float) (pos.y - cam.y) + p.getHeight() + 0.05f;
-                float cz = (float) (pos.z - cam.z);
-                drawHat(hat, m, cx, baseY, cz, time);
-            }
+            Vec3d pos = mc.player.getLerpedPos(tickProgress);
+            float cx = (float) (pos.x - cam.x);
+            float baseY = (float) (pos.y - cam.y) + mc.player.getHeight() + 0.05f;
+            float cz = (float) (pos.z - cam.z);
+            drawHat(hat, m, cx, baseY, cz, time);
             if (consumers instanceof VertexConsumerProvider.Immediate imm) imm.draw(HAT_LAYER);
         }
     }
