@@ -7,13 +7,15 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderEvents;
+import net.fabricmc.fabric.api.event.player.AttackEntityCallback;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.network.AbstractClientPlayerEntity;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
+import net.minecraft.entity.LivingEntity;
 import net.minecraft.text.Text;
+import net.minecraft.util.ActionResult;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.MathHelper;
 import org.lwjgl.glfw.GLFW;
@@ -26,6 +28,7 @@ public class UltraVisualClient implements ClientModInitializer {
         public static int boxStyle = 0;
         public static int range = 500;
         public static int espColor = 0;
+        public static boolean showInvisible = true;
 
         public static boolean targetEsp = true;
         public static int targetColor = 0;
@@ -33,7 +36,6 @@ public class UltraVisualClient implements ClientModInitializer {
         public static boolean targetHud = true;
 
         public static boolean hat = true;
-        public static boolean hatAll = false;
 
         public static boolean watermark = true;
         public static boolean coords = true;
@@ -52,6 +54,8 @@ public class UltraVisualClient implements ClientModInitializer {
     }
 
     public static KeyBinding openKey, espKey, targetKey, hatKey;
+    public static LivingEntity lastHit = null;
+    public static long lastHitTime = 0L;
 
     private static KeyBinding reg(String name, int key, KeyBinding.Category cat) {
         return KeyBindingHelper.registerKeyBinding(
@@ -90,6 +94,15 @@ public class UltraVisualClient implements ClientModInitializer {
                 Settings.hat = !Settings.hat;
                 msg(client, "China Hat", Settings.hat);
             }
+        });
+
+        // remember who WE hit (only our own client player)
+        AttackEntityCallback.EVENT.register((player, world, hand, entity, hitResult) -> {
+            if (player == MinecraftClient.getInstance().player && entity instanceof LivingEntity le) {
+                lastHit = le;
+                lastHitTime = System.currentTimeMillis();
+            }
+            return ActionResult.PASS;
         });
 
         WorldRenderEvents.END_MAIN.register(EspRenderer::render);
@@ -141,8 +154,10 @@ public class UltraVisualClient implements ClientModInitializer {
             }
         }
 
-        AbstractClientPlayerEntity t = EspRenderer.currentTarget;
-        if (Settings.targetHud && t != null) {
+        // Target HUD: only for 6 seconds after we hit something
+        LivingEntity t = lastHit;
+        if (Settings.targetHud && t != null && t.isAlive()
+                && System.currentTimeMillis() - lastHitTime < 6000L) {
             int bx = ctx.getScaledWindowWidth() / 2 + 24;
             int by = ctx.getScaledWindowHeight() / 2 + 24;
             float hp = t.getHealth();
