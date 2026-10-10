@@ -70,9 +70,9 @@ public class UltraScreen extends Screen {
                 for (int i = 0; i < RANGES.length; i++) if (RANGES[i] == Settings.range) idx = i;
                 Settings.range = RANGES[(idx + 1) % RANGES.length];
             });
-            toggle("China hat", () -> Settings.hat, () -> Settings.hat = !Settings.hat);
-            cycle("Hat on", () -> Settings.hatAll ? "All players" : "Target",
-                    () -> Settings.hatAll = !Settings.hatAll);
+            toggle("Show invisible", () -> Settings.showInvisible,
+                    () -> Settings.showInvisible = !Settings.showInvisible);
+            toggle("China hat (me)", () -> Settings.hat, () -> Settings.hat = !Settings.hat);
         } else if (tab == 1) {
             toggle("Target ESP", () -> Settings.targetEsp, () -> Settings.targetEsp = !Settings.targetEsp);
             cycle("Ring color", () -> Settings.TARGET_NAMES[Settings.targetColor],
@@ -82,7 +82,7 @@ public class UltraScreen extends Screen {
                 for (int i = 0; i < RING_SIZES.length; i++) if (RING_SIZES[i] == Settings.ringSize) idx = i;
                 Settings.ringSize = RING_SIZES[(idx + 1) % RING_SIZES.length];
             });
-            toggle("Target HUD", () -> Settings.targetHud, () -> Settings.targetHud = !Settings.targetHud);
+            toggle("Target HUD (on hit)", () -> Settings.targetHud, () -> Settings.targetHud = !Settings.targetHud);
         } else {
             toggle("Watermark", () -> Settings.watermark, () -> Settings.watermark = !Settings.watermark);
             toggle("Coordinates", () -> Settings.coords, () -> Settings.coords = !Settings.coords);
@@ -137,14 +137,12 @@ public class UltraScreen extends Screen {
         super.render(ctx, mouseX, mouseY, delta);
         TextRenderer tr = this.textRenderer;
 
-        // header
         Text title = Text.literal("ULTRA VISUAL").formatted(Formatting.BOLD);
         ctx.drawText(tr, title, px + 14, py + 14, 0xFFFFFFFF, false);
         int fps = MinecraftClient.getInstance().getCurrentFps();
         int fcol = fps >= 100 ? 0xFF55FF55 : (fps >= 50 ? 0xFFFFFF55 : 0xFFFF5555);
         ctx.drawText(tr, Text.literal(fps + " FPS"), px + 14 + tr.getWidth(title) + 12, py + 14, fcol, false);
 
-        // tabs (drawn over the vanilla buttons)
         for (int i = 0; i < TABS.length; i++) {
             int bx = px + 8, by = py + 44 + i * 28, bw = SIDE - 16;
             boolean hover = mouseX >= bx && mouseX < bx + bw && mouseY >= by && mouseY < by + 24;
@@ -159,7 +157,6 @@ public class UltraScreen extends Screen {
                     i == tab ? 0xFFFFFFFF : 0xFF999999, false);
         }
 
-        // rows
         for (Item it : items) {
             boolean hover = mouseX >= it.x && mouseX < it.x + it.w && mouseY >= it.y && mouseY < it.y + it.h;
             ctx.fill(it.x, it.y, it.x + it.w, it.y + it.h, 0xFF1B1B1B);
