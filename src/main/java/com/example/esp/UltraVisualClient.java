@@ -12,7 +12,6 @@ import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.render.Camera;
-import net.minecraft.client.util.InputUtil;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.item.ItemStack;
@@ -22,6 +21,7 @@ import net.minecraft.util.Hand;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
+import net.minecraft.client.util.InputUtil;
 import org.lwjgl.glfw.GLFW;
 
 public class UltraVisualClient implements ClientModInitializer {
@@ -137,13 +137,13 @@ public class UltraVisualClient implements ClientModInitializer {
 
             if (client.player == null || client.world == null) return;
 
-            // Custom binds
-            long window = client.getWindow().getHandle();
+            // Custom binds via GLFW directly
+            long handle = client.getWindow().getHandle();
             for (Map.Entry<String, Integer> entry : Settings.binds.entrySet()) {
                 String label = entry.getKey();
                 int key = entry.getValue();
                 if (key == GLFW.GLFW_KEY_UNKNOWN) continue;
-                boolean pressed = InputUtil.isKeyPressed(window, key);
+                boolean pressed = GLFW.glfwGetKey(handle, key) == GLFW.GLFW_PRESS;
                 boolean prev = bindPrevState.getOrDefault(label, false);
                 if (pressed && !prev) triggerBind(label, client);
                 bindPrevState.put(label, pressed);
@@ -235,8 +235,10 @@ public class UltraVisualClient implements ClientModInitializer {
         String n = GLFW.glfwGetKeyName(key, 0);
         if (n != null) return n.toUpperCase();
         return switch (key) {
-            case GLFW.GLFW_KEY_RIGHT_SHIFT -> "RSHIFT"; case GLFW.GLFW_KEY_LEFT_SHIFT -> "LSHIFT";
-            case GLFW.GLFW_KEY_SPACE -> "SPACE"; case GLFW.GLFW_KEY_TAB -> "TAB";
+            case GLFW.GLFW_KEY_RIGHT_SHIFT -> "RSHIFT";
+            case GLFW.GLFW_KEY_LEFT_SHIFT -> "LSHIFT";
+            case GLFW.GLFW_KEY_SPACE -> "SPACE";
+            case GLFW.GLFW_KEY_TAB -> "TAB";
             case GLFW.GLFW_KEY_F1 -> "F1"; case GLFW.GLFW_KEY_F2 -> "F2";
             case GLFW.GLFW_KEY_F3 -> "F3"; case GLFW.GLFW_KEY_F4 -> "F4";
             case GLFW.GLFW_KEY_F5 -> "F5"; case GLFW.GLFW_KEY_F6 -> "F6";
@@ -316,14 +318,13 @@ public class UltraVisualClient implements ClientModInitializer {
             float pitch = cam.getPitch(), yawC = cam.getYaw();
             int fov = mc.options.getFov().getValue();
             int cx = sw / 2, cy = sh / 2;
-            float time = (System.currentTimeMillis() % 4000L) / 4000.0f;
             for (var p : mc.world.getPlayers()) {
                 if (p == mc.player) continue;
                 Vec3d headPos = new Vec3d(p.getX(), p.getY() + p.getHeight() * 0.9, p.getZ());
                 int[] screen = worldToScreen(headPos, camPos, pitch, yawC, fov, sw, sh);
                 if (screen == null) continue;
-                int sx = screen[0], sy = screen[1];
-                if (Settings.tracers) drawLine(ctx, cx, cy, sx, sy, 0x9900CED1);
+                int sx = screen[0], scy = screen[1];
+                if (Settings.tracers) drawLine(ctx, cx, cy, sx, scy, 0x9900CED1);
                 if (Settings.nametags) {
                     float hp = p.getHealth(), maxHp = p.getMaxHealth();
                     int hpCol = 0xFF000000 | MathHelper.hsvToRgb(0.33f * (hp / Math.max(1f, maxHp)), 1f, 1f);
@@ -331,15 +332,16 @@ public class UltraVisualClient implements ClientModInitializer {
                     String hpStr = String.format("%.0f HP", hp);
                     String dist = String.format("%.0fm", p.distanceTo(mc.player));
                     int nw = Math.max(tr.getWidth(name), tr.getWidth(hpStr)) + 8;
-                    rr(ctx, sx - nw / 2, sy - 26, nw, 30, 0xAA141414);
-                    ctx.drawText(tr, Text.literal(name), sx - tr.getWidth(name) / 2, sy - 24, 0xFFFFFFFF, false);
-                    ctx.drawText(tr, Text.literal(hpStr), sx - tr.getWidth(hpStr) / 2, sy - 14, hpCol, false);
-                    ctx.drawText(tr, Text.literal(dist), sx - tr.getWidth(dist) / 2, sy - 4, 0xFF888888, false);
+                    rr(ctx, sx - nw / 2, scy - 26, nw, 30, 0xAA141414);
+                    ctx.drawText(tr, Text.literal(name), sx - tr.getWidth(name) / 2, scy - 24, 0xFFFFFFFF, false);
+                    ctx.drawText(tr, Text.literal(hpStr), sx - tr.getWidth(hpStr) / 2, scy - 14, hpCol, false);
+                    ctx.drawText(tr, Text.literal(dist), sx - tr.getWidth(dist) / 2, scy - 4, 0xFF888888, false);
                 }
                 if (Settings.healthBars) {
-                    float hp = p.getHealth(), frac = MathHelper.clamp(hp / Math.max(1f, p.getMaxHealth()), 0f, 1f);
+                    float hp = p.getHealth();
+                    float frac = MathHelper.clamp(hp / Math.max(1f, p.getMaxHealth()), 0f, 1f);
                     int bw = 30, bh = 4;
-                    int bx = sx - bw / 2, by = sy - 30;
+                    int bx = sx - bw / 2, by = scy - 30;
                     ctx.fill(bx, by, bx + bw, by + bh, 0xFF333333);
                     int col = 0xFF000000 | MathHelper.hsvToRgb(0.33f * frac, 1f, 1f);
                     ctx.fill(bx, by, bx + (int)(bw * frac), by + bh, col);
@@ -370,14 +372,14 @@ public class UltraVisualClient implements ClientModInitializer {
 
         // Inventory HUD
         if (Settings.inventoryHud) {
-            int hudX = Settings.inventoryHudX, hudY = Settings.inventoryHudY;
+            int hudX = Settings.inventoryHudX, hudY2 = Settings.inventoryHudY;
             int slotSize = 18, pad = 4;
             int hudW = 9 * slotSize + 2 * pad, hudH = slotSize + 2 * pad;
-            rr(ctx, hudX, hudY, hudW, hudH, 0xCC141414);
-            ctx.fill(hudX + 1, hudY, hudX + hudW - 1, hudY + 1, ACCENT);
+            rr(ctx, hudX, hudY2, hudW, hudH, 0xCC141414);
+            ctx.fill(hudX + 1, hudY2, hudX + hudW - 1, hudY2 + 1, ACCENT);
             for (int i = 0; i < 9; i++) {
                 ItemStack stack = mc.player.getInventory().getStack(i);
-                int ix = hudX + pad + i * slotSize, iy = hudY + pad;
+                int ix = hudX + pad + i * slotSize, iy = hudY2 + pad;
                 ctx.fill(ix, iy, ix + slotSize - 1, iy + slotSize - 1, 0xFF2A2A2A);
                 if (i == mc.player.getInventory().getSelectedSlot())
                     ctx.fill(ix, iy, ix + slotSize - 1, iy + 1, 0xFFFFFFFF);
@@ -393,7 +395,7 @@ public class UltraVisualClient implements ClientModInitializer {
             ctx.fill(rx + 1, ry2, rx + rs - 1, ry2 + 1, ACCENT);
             int centerX = rx + rs / 2, centerY = ry2 + rs / 2;
             ctx.fill(centerX - 1, centerY - 1, centerX + 1, centerY + 1, 0xFFFFFFFF);
-            float yaw = mc.player.getYaw();
+            float yaw2 = mc.player.getYaw();
             for (var p : mc.world.getPlayers()) {
                 if (p == mc.player) continue;
                 double dx = p.getX() - mc.player.getX();
@@ -401,13 +403,11 @@ public class UltraVisualClient implements ClientModInitializer {
                 double dist = Math.sqrt(dx * dx + dz * dz);
                 if (dist > Settings.range) continue;
                 double scale = (rs / 2.0 - 4) / Math.max(50.0, dist);
-                double rad = Math.toRadians(yaw);
+                double rad = Math.toRadians(yaw2);
                 double rotX = dx * Math.cos(rad) - dz * Math.sin(rad);
                 double rotZ = dx * Math.sin(rad) + dz * Math.cos(rad);
-                int dotX = (int)(centerX + rotX * scale);
-                int dotY = (int)(centerY + rotZ * scale);
-                dotX = MathHelper.clamp(dotX, rx + 2, rx + rs - 2);
-                dotY = MathHelper.clamp(dotY, ry2 + 2, ry2 + rs - 2);
+                int dotX = MathHelper.clamp((int)(centerX + rotX * scale), rx + 2, rx + rs - 2);
+                int dotY = MathHelper.clamp((int)(centerY + rotZ * scale), ry2 + 2, ry2 + rs - 2);
                 ctx.fill(dotX - 1, dotY - 1, dotX + 1, dotY + 1, 0xFFFF4444);
             }
         }
