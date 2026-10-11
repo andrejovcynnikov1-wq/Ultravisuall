@@ -54,11 +54,10 @@ public final class EspRenderer {
         float tick = mc.getRenderTickCounter().getTickProgress(false);
         Vec3d cam = mc.gameRenderer.getCamera().getCameraPos();
         Vec3d look = mc.player.getRotationVec(tick).normalize();
-        Vec3d myPos = mc.player.getLerpedPos(tick);
+        Vec3d myPos = new Vec3d(mc.player.getX(), mc.player.getY(), mc.player.getZ());
         double range = Settings.range;
         float time = (System.currentTimeMillis() % 4000L) / 4000.0f;
 
-        // Find target
         AbstractClientPlayerEntity target = null;
         double best = TARGET_DOT;
         for (AbstractClientPlayerEntity p : mc.world.getPlayers()) {
@@ -78,7 +77,9 @@ public final class EspRenderer {
 
         // Aura circle
         if (Settings.auraCircle) {
-            float mx = (float)(myPos.x - cam.x), my = (float)(myPos.y - cam.y) + 0.03f, mz = (float)(myPos.z - cam.z);
+            float mx = (float)(myPos.x - cam.x);
+            float my = (float)(myPos.y - cam.y) + 0.03f;
+            float mz = (float)(myPos.z - cam.z);
             drawRing(quads, m, mx, my, mz, Settings.auraRadius, 0.07f, time, 1f, 1, 0.85f);
             drawRing(quads, m, mx, my, mz, Settings.auraRadius - 0.12f, 0.03f, time, 1f, 1, 0.3f);
         }
@@ -90,17 +91,17 @@ public final class EspRenderer {
             var timeIt = UltraVisualClient.trailTimes.iterator();
             int idx = 0;
             while (posIt.hasNext() && timeIt.hasNext()) {
-                Vec3d p = posIt.next(); long t = timeIt.next();
-                float age = (now - t) / 3000f;
+                Vec3d p = posIt.next(); long t2 = timeIt.next();
+                float age = (now - t2) / 3000f;
                 if (age >= 1f) break;
                 float alpha = 0.6f * (1f - age);
                 float hue = (idx / 60f + time) % 1f;
                 int c = MathHelper.hsvToRgb(hue, 1f, 1f);
-                float px = (float)(p.x - cam.x), py = (float)(p.y - cam.y), pz = (float)(p.z - cam.z);
-                vtx(quads, m, px - 0.1f, py + 0.02f, pz, c, alpha);
-                vtx(quads, m, px + 0.1f, py + 0.02f, pz, c, alpha);
-                vtx(quads, m, px + 0.1f, py + 0.12f, pz, c, alpha);
-                vtx(quads, m, px - 0.1f, py + 0.12f, pz, c, alpha);
+                float px2 = (float)(p.x - cam.x), py2 = (float)(p.y - cam.y), pz2 = (float)(p.z - cam.z);
+                vtx(quads, m, px2 - 0.1f, py2 + 0.02f, pz2, c, alpha);
+                vtx(quads, m, px2 + 0.1f, py2 + 0.02f, pz2, c, alpha);
+                vtx(quads, m, px2 + 0.1f, py2 + 0.12f, pz2, c, alpha);
+                vtx(quads, m, px2 - 0.1f, py2 + 0.12f, pz2, c, alpha);
                 idx++;
             }
         }
@@ -109,10 +110,11 @@ public final class EspRenderer {
         if (Settings.jumpCircle && UltraVisualClient.jumpPos != null) {
             float age = (System.currentTimeMillis() - UltraVisualClient.jumpTime) / 1500f;
             if (age < 1f) {
-                float jx = (float)(UltraVisualClient.jumpPos.x - cam.x);
-                float jy = (float)(UltraVisualClient.jumpPos.y - cam.y) + 0.03f;
-                float jz = (float)(UltraVisualClient.jumpPos.z - cam.z);
-                drawRing(quads, m, jx, jy, jz, age * 3.0f, 0.05f, time, 1f, 1, 0.8f * (1f - age));
+                Vec3d jp = UltraVisualClient.jumpPos;
+                float jx = (float)(jp.x - cam.x);
+                float jy = (float)(jp.y - cam.y) + 0.03f;
+                float jz = (float)(jp.z - cam.z);
+                drawRing(quads, m, jx, jy, jz, age * 3.0f + 0.1f, 0.05f, time, 1f, 1, 0.8f * (1f - age));
             }
         }
 
@@ -132,8 +134,10 @@ public final class EspRenderer {
                 float hw = p.getWidth() / 2f;
                 float x = (float)(pos.x - cam.x), y = (float)(pos.y - cam.y), z = (float)(pos.z - cam.z);
                 float x1 = x - hw, y1 = y, z1 = z - hw, x2 = x + hw, y2 = y + p.getHeight(), z2 = z + hw;
-                if (Settings.boxStyle == 0 || Settings.boxStyle == 2) drawBox(quads, m, x1, y1, z1, x2, y2, z2, r, g, b, 0.25f);
-                if (Settings.boxStyle == 1 || Settings.boxStyle == 2) drawEdges(quads, m, x1, y1, z1, x2, y2, z2, r, g, b, 0.95f, 0.02f);
+                if (Settings.boxStyle == 0 || Settings.boxStyle == 2)
+                    drawBox(quads, m, x1, y1, z1, x2, y2, z2, r, g, b, 0.25f);
+                if (Settings.boxStyle == 1 || Settings.boxStyle == 2)
+                    drawEdges(quads, m, x1, y1, z1, x2, y2, z2, r, g, b, 0.95f, 0.02f);
             }
         }
 
@@ -142,54 +146,64 @@ public final class EspRenderer {
             Vec3d pos = target.getLerpedPos(tick);
             float x = (float)(pos.x - cam.x), y = (float)(pos.y - cam.y), z = (float)(pos.z - cam.z);
             float frac = MathHelper.clamp(target.getHealth() / Math.max(1f, target.getMaxHealth()), 0f, 1f);
-            float t = (System.currentTimeMillis() % 2000L) / 2000f;
+            float t2 = (System.currentTimeMillis() % 2000L) / 2000f;
             for (int k = 0; k < 6; k++) {
-                float tt = t - k * 0.035f;
+                float tt = t2 - k * 0.035f;
                 float yy = (1f - MathHelper.cos(tt * (float)(2 * Math.PI))) / 2f * target.getHeight();
-                drawRing(quads, m, x, y + yy, z, Settings.ringSize, 0.07f, time, frac, Settings.targetColor, 0.75f * (1f - k / 6f));
+                drawRing(quads, m, x, y + yy, z, Settings.ringSize, 0.07f, time, frac,
+                        Settings.targetColor, 0.75f * (1f - k / 6f));
             }
         }
 
         if (consumers instanceof VertexConsumerProvider.Immediate imm) imm.draw(BOX_LAYER);
 
-        // Hat (only on me, only in third person)
+        // Hat only on me, only in third person
         if (Settings.hat && !mc.options.getPerspective().isFirstPerson()) {
             VertexConsumer hat = consumers.getBuffer(HAT_LAYER);
-            float cx = (float)(myPos.x - cam.x), baseY = (float)(myPos.y - cam.y) + mc.player.getHeight() + 0.05f, cz = (float)(myPos.z - cam.z);
+            float cx = (float)(myPos.x - cam.x);
+            float baseY = (float)(myPos.y - cam.y) + mc.player.getHeight() + 0.05f;
+            float cz = (float)(myPos.z - cam.z);
             drawHat(hat, m, cx, baseY, cz, time);
             if (consumers instanceof VertexConsumerProvider.Immediate imm) imm.draw(HAT_LAYER);
         }
     }
 
     private static int ringColor(int mode, float pos, float time, float frac) {
-        float hue = switch (mode) { case 0 -> 0.33f * frac; case 1 -> (pos + time) % 1f; case 2 -> 0.5f; default -> 0.9f; };
+        float hue = switch (mode) {
+            case 0 -> 0.33f * frac;
+            case 1 -> (pos + time) % 1f;
+            case 2 -> 0.5f;
+            default -> 0.9f;
+        };
         return MathHelper.hsvToRgb(hue, 1f, 1f);
     }
+
     private static float rgb(int c, int shift) { return ((c >> shift) & 0xFF) / 255f; }
+
     private static void vtx(VertexConsumer vc, Matrix4f m, float x, float y, float z, int c, float a) {
         vc.vertex(m, x, y, z).color(rgb(c, 16), rgb(c, 8), rgb(c, 0), a);
     }
-    private static void vtxf(VertexConsumer vc, Matrix4f m, float x, float y, float z, float r, float g, float b, float a) {
-        vc.vertex(m, x, y, z).color(r, g, b, a);
-    }
 
-    private static void drawRing(VertexConsumer vc, Matrix4f m, float cx, float y, float cz, float radius, float width, float time, float frac, int mode, float alpha) {
-        float ri = radius - width;
-        if (ri < 0) ri = 0;
+    private static void drawRing(VertexConsumer vc, Matrix4f m, float cx, float y, float cz,
+                                 float radius, float width, float time, float frac, int mode, float alpha) {
+        float ri = Math.max(0f, radius - width);
         for (int i = 0; i < RING_SEG; i++) {
-            float a0 = (float)(2 * Math.PI * i / RING_SEG), a1 = (float)(2 * Math.PI * (i + 1) / RING_SEG);
-            int c0 = ringColor(mode, i / (float)RING_SEG, time, frac), c1 = ringColor(mode, (i + 1) / (float)RING_SEG, time, frac);
-            vtx(vc, m, cx + MathHelper.cos(a0) * ri, y, cz + MathHelper.sin(a0) * ri, c0, alpha);
+            float a0 = (float)(2 * Math.PI * i / RING_SEG);
+            float a1 = (float)(2 * Math.PI * (i + 1) / RING_SEG);
+            int c0 = ringColor(mode, i / (float)RING_SEG, time, frac);
+            int c1 = ringColor(mode, (i + 1) / (float)RING_SEG, time, frac);
+            vtx(vc, m, cx + MathHelper.cos(a0) * ri,     y, cz + MathHelper.sin(a0) * ri,     c0, alpha);
             vtx(vc, m, cx + MathHelper.cos(a0) * radius, y, cz + MathHelper.sin(a0) * radius, c0, alpha);
             vtx(vc, m, cx + MathHelper.cos(a1) * radius, y, cz + MathHelper.sin(a1) * radius, c1, alpha);
-            vtx(vc, m, cx + MathHelper.cos(a1) * ri, y, cz + MathHelper.sin(a1) * ri, c1, alpha);
+            vtx(vc, m, cx + MathHelper.cos(a1) * ri,     y, cz + MathHelper.sin(a1) * ri,     c1, alpha);
         }
     }
 
     private static void drawHat(VertexConsumer vc, Matrix4f m, float cx, float baseY, float cz, float time) {
         float apexY = baseY + HAT_HEIGHT;
         for (int i = 0; i < SEGMENTS; i++) {
-            float a0 = (float)(2 * Math.PI * i / SEGMENTS), a1 = (float)(2 * Math.PI * (i + 1) / SEGMENTS);
+            float a0 = (float)(2 * Math.PI * i / SEGMENTS);
+            float a1 = (float)(2 * Math.PI * (i + 1) / SEGMENTS);
             float x0 = cx + MathHelper.cos(a0) * HAT_RADIUS, z0 = cz + MathHelper.sin(a0) * HAT_RADIUS;
             float x1 = cx + MathHelper.cos(a1) * HAT_RADIUS, z1 = cz + MathHelper.sin(a1) * HAT_RADIUS;
             int c0 = MathHelper.hsvToRgb((i / (float)SEGMENTS + time) % 1f, 0.9f, 1f);
@@ -204,11 +218,15 @@ public final class EspRenderer {
     private static void q(VertexConsumer vc, Matrix4f m, float r, float g, float b, float a,
                           float x1, float y1, float z1, float x2, float y2, float z2,
                           float x3, float y3, float z3, float x4, float y4, float z4) {
-        vc.vertex(m, x1, y1, z1).color(r, g, b, a); vc.vertex(m, x2, y2, z2).color(r, g, b, a);
-        vc.vertex(m, x3, y3, z3).color(r, g, b, a); vc.vertex(m, x4, y4, z4).color(r, g, b, a);
+        vc.vertex(m, x1, y1, z1).color(r, g, b, a);
+        vc.vertex(m, x2, y2, z2).color(r, g, b, a);
+        vc.vertex(m, x3, y3, z3).color(r, g, b, a);
+        vc.vertex(m, x4, y4, z4).color(r, g, b, a);
     }
 
-    private static void drawBox(VertexConsumer vc, Matrix4f m, float x1, float y1, float z1, float x2, float y2, float z2, float r, float g, float b, float a) {
+    private static void drawBox(VertexConsumer vc, Matrix4f m,
+                                float x1, float y1, float z1, float x2, float y2, float z2,
+                                float r, float g, float b, float a) {
         q(vc,m,r,g,b,a, x1,y1,z1, x2,y1,z1, x2,y1,z2, x1,y1,z2);
         q(vc,m,r,g,b,a, x1,y2,z1, x1,y2,z2, x2,y2,z2, x2,y2,z1);
         q(vc,m,r,g,b,a, x1,y1,z1, x1,y2,z1, x2,y2,z1, x2,y1,z1);
@@ -217,9 +235,17 @@ public final class EspRenderer {
         q(vc,m,r,g,b,a, x2,y1,z1, x2,y2,z1, x2,y2,z2, x2,y1,z2);
     }
 
-    private static void drawEdges(VertexConsumer vc, Matrix4f m, float x1, float y1, float z1, float x2, float y2, float z2, float r, float g, float b, float a, float t) {
-        for (float yy : new float[]{y1, y2}) for (float zz : new float[]{z1, z2}) drawBox(vc, m, x1, yy-t, zz-t, x2, yy+t, zz+t, r, g, b, a);
-        for (float xx : new float[]{x1, x2}) for (float zz : new float[]{z1, z2}) drawBox(vc, m, xx-t, y1, zz-t, xx+t, y2, zz+t, r, g, b, a);
-        for (float xx : new float[]{x1, x2}) for (float yy : new float[]{y1, y2}) drawBox(vc, m, xx-t, yy-t, z1, xx+t, yy+t, z2, r, g, b, a);
+    private static void drawEdges(VertexConsumer vc, Matrix4f m,
+                                  float x1, float y1, float z1, float x2, float y2, float z2,
+                                  float r, float g, float b, float a, float t) {
+        for (float yy : new float[]{y1, y2})
+            for (float zz : new float[]{z1, z2})
+                drawBox(vc, m, x1, yy-t, zz-t, x2, yy+t, zz+t, r, g, b, a);
+        for (float xx : new float[]{x1, x2})
+            for (float zz : new float[]{z1, z2})
+                drawBox(vc, m, xx-t, y1, zz-t, xx+t, y2, zz+t, r, g, b, a);
+        for (float xx : new float[]{x1, x2})
+            for (float yy : new float[]{y1, y2})
+                drawBox(vc, m, xx-t, yy-t, z1, xx+t, yy+t, z2, r, g, b, a);
     }
 }
