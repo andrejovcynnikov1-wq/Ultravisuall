@@ -14,10 +14,12 @@ import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 
 public class UltraScreen extends Screen {
-    private static final int W = 440, H = 250, SIDE = 110;
+    private static final int W = 440, H = 310, SIDE = 110;
     private static final int ACCENT = UltraVisualClient.ACCENT;
     private static final String[] TABS = {"Visuals", "Target", "HUD"};
     private static final float[] RING_SIZES = {0.6f, 0.8f, 1.0f, 1.2f};
+    private static final float[] AURA_RADII = {3.0f, 4.0f, 5.0f, 6.0f};
+    private static final float[] KILL_RANGES = {3.0f, 4.0f, 5.0f, 6.0f};
     private static final int[] RANGES = {100, 200, 300, 400, 500};
     private static int tab = 0;
 
@@ -65,7 +67,7 @@ public class UltraScreen extends Screen {
                     () -> Settings.boxStyle = (Settings.boxStyle + 1) % Settings.STYLE_NAMES.length);
             cycle("ESP color", () -> Settings.ESP_NAMES[Settings.espColor],
                     () -> Settings.espColor = (Settings.espColor + 1) % Settings.ESP_NAMES.length);
-            cycle("Range", () -> String.valueOf(Settings.range), () -> {
+            cycle("Range", () -> Settings.range + " blocks", () -> {
                 int idx = 0;
                 for (int i = 0; i < RANGES.length; i++) if (RANGES[i] == Settings.range) idx = i;
                 Settings.range = RANGES[(idx + 1) % RANGES.length];
@@ -82,11 +84,27 @@ public class UltraScreen extends Screen {
                 for (int i = 0; i < RING_SIZES.length; i++) if (RING_SIZES[i] == Settings.ringSize) idx = i;
                 Settings.ringSize = RING_SIZES[(idx + 1) % RING_SIZES.length];
             });
-            toggle("Target HUD (on hit)", () -> Settings.targetHud, () -> Settings.targetHud = !Settings.targetHud);
+            toggle("Target HUD (on hit)", () -> Settings.targetHud,
+                    () -> Settings.targetHud = !Settings.targetHud);
+            toggle("Aura circle", () -> Settings.auraCircle,
+                    () -> Settings.auraCircle = !Settings.auraCircle);
+            cycle("Aura radius", () -> Settings.auraRadius + " blocks", () -> {
+                int idx = 0;
+                for (int i = 0; i < AURA_RADII.length; i++) if (AURA_RADII[i] == Settings.auraRadius) idx = i;
+                Settings.auraRadius = AURA_RADII[(idx + 1) % AURA_RADII.length];
+            });
+            toggle("Kill Aura", () -> Settings.killAura,
+                    () -> Settings.killAura = !Settings.killAura);
+            cycle("Kill range", () -> Settings.killRange + " blocks", () -> {
+                int idx = 0;
+                for (int i = 0; i < KILL_RANGES.length; i++) if (KILL_RANGES[i] == Settings.killRange) idx = i;
+                Settings.killRange = KILL_RANGES[(idx + 1) % KILL_RANGES.length];
+            });
         } else {
             toggle("Watermark", () -> Settings.watermark, () -> Settings.watermark = !Settings.watermark);
             toggle("Coordinates", () -> Settings.coords, () -> Settings.coords = !Settings.coords);
-            toggle("Module list", () -> Settings.moduleList, () -> Settings.moduleList = !Settings.moduleList);
+            toggle("Module list", () -> Settings.moduleList,
+                    () -> Settings.moduleList = !Settings.moduleList);
         }
     }
 
@@ -108,10 +126,7 @@ public class UltraScreen extends Screen {
         int cw = W - SIDE - 16;
         int y = py + 44;
         for (Item it : items) {
-            it.x = cx;
-            it.y = y;
-            it.w = cw;
-            it.h = 24;
+            it.x = cx; it.y = y; it.w = cw; it.h = 24;
             final Item f = it;
             this.addDrawableChild(ButtonWidget.builder(Text.literal(""), b -> f.click.run())
                     .dimensions(cx, y, cw, 24).build());
@@ -124,7 +139,7 @@ public class UltraScreen extends Screen {
         c.fill(x, y + 1, x + w, y + h - 1, col);
     }
 
-    // no @Override on purpose: our own dark background and panel instead of the blur
+    // no @Override on purpose
     public void renderBackground(DrawContext ctx, int mouseX, int mouseY, float delta) {
         ctx.fill(0, 0, this.width, this.height, 0xAA000000);
         ctx.fill(px, py, px + W, py + H, 0xFF1B1B1B);
@@ -141,7 +156,8 @@ public class UltraScreen extends Screen {
         ctx.drawText(tr, title, px + 14, py + 14, 0xFFFFFFFF, false);
         int fps = MinecraftClient.getInstance().getCurrentFps();
         int fcol = fps >= 100 ? 0xFF55FF55 : (fps >= 50 ? 0xFFFFFF55 : 0xFFFF5555);
-        ctx.drawText(tr, Text.literal(fps + " FPS"), px + 14 + tr.getWidth(title) + 12, py + 14, fcol, false);
+        ctx.drawText(tr, Text.literal(fps + " FPS"),
+                px + 14 + tr.getWidth(title) + 12, py + 14, fcol, false);
 
         for (int i = 0; i < TABS.length; i++) {
             int bx = px + 8, by = py + 44 + i * 28, bw = SIDE - 16;
@@ -158,18 +174,17 @@ public class UltraScreen extends Screen {
         }
 
         for (Item it : items) {
-            boolean hover = mouseX >= it.x && mouseX < it.x + it.w && mouseY >= it.y && mouseY < it.y + it.h;
+            boolean hover = mouseX >= it.x && mouseX < it.x + it.w
+                    && mouseY >= it.y && mouseY < it.y + it.h;
             ctx.fill(it.x, it.y, it.x + it.w, it.y + it.h, 0xFF1B1B1B);
             rr(ctx, it.x, it.y, it.w, it.h, hover ? 0xFF303030 : 0xFF262626);
             ctx.drawText(tr, Text.literal(it.label), it.x + 10, it.y + 8, 0xFFFFFFFF, false);
 
             if (it.on != null) {
                 boolean on = it.on.getAsBoolean();
-                int sx = it.x + it.w - 38;
-                int sy = it.y + 6;
+                int sx = it.x + it.w - 38, sy = it.y + 6;
                 rr(ctx, sx, sy, 28, 12, on ? ACCENT : 0xFF444444);
-                int kx = sx + (on ? 18 : 2);
-                ctx.fill(kx, sy + 2, kx + 8, sy + 10, 0xFFFFFFFF);
+                ctx.fill(sx + (on ? 18 : 2), sy + 2, sx + (on ? 26 : 10), sy + 10, 0xFFFFFFFF);
             } else {
                 String v = it.value.get();
                 int vw = tr.getWidth(v) + 14;
