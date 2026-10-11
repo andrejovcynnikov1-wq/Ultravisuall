@@ -34,11 +34,14 @@ public class UltraScreen extends Screen {
 
     private final List<Item> items = new ArrayList<>();
     private int px, py, ph;
+    // binding: which item is waiting for a key press
     private Item bindingItem = null;
-
-    // Inventory HUD dragging
+    // dragging inventory HUD
     private boolean draggingHud = false;
     private int dragOffX, dragOffY;
+    // dragging radar
+    private boolean draggingRadar = false;
+    private int dragRadarX, dragRadarY;
 
     public UltraScreen() { super(Text.literal("ULTRA VISUAL")); }
 
@@ -66,9 +69,15 @@ public class UltraScreen extends Screen {
             toggle("Show invisible", () -> Settings.showInvisible, () -> Settings.showInvisible = !Settings.showInvisible);
             toggle("Tracers", () -> Settings.tracers, () -> Settings.tracers = !Settings.tracers);
             toggle("Nametags", () -> Settings.nametags, () -> Settings.nametags = !Settings.nametags);
+            toggle("Health bars", () -> Settings.healthBars, () -> Settings.healthBars = !Settings.healthBars);
             toggle("Trail", () -> Settings.trail, () -> Settings.trail = !Settings.trail);
             toggle("Jump circle", () -> Settings.jumpCircle, () -> Settings.jumpCircle = !Settings.jumpCircle);
             toggle("China hat (me)", () -> Settings.hat, () -> Settings.hat = !Settings.hat);
+            toggle("Aura circle", () -> Settings.auraCircle, () -> Settings.auraCircle = !Settings.auraCircle);
+            cycle("Aura radius", () -> Settings.auraRadius + " bl", () -> {
+                int idx = 0; for (int i = 0; i < AURA_RADII.length; i++) if (AURA_RADII[i] == Settings.auraRadius) idx = i;
+                Settings.auraRadius = AURA_RADII[(idx + 1) % AURA_RADII.length];
+            });
         } else if (tab == 1) {
             toggle("Target ESP", () -> Settings.targetEsp, () -> Settings.targetEsp = !Settings.targetEsp);
             cycle("Ring color", () -> Settings.TARGET_NAMES[Settings.targetColor],
@@ -79,13 +88,8 @@ public class UltraScreen extends Screen {
             });
             toggle("Target HUD (on hit)", () -> Settings.targetHud, () -> Settings.targetHud = !Settings.targetHud);
             toggle("Hit Flash", () -> Settings.hitFlash, () -> Settings.hitFlash = !Settings.hitFlash);
-            toggle("Aura circle", () -> Settings.auraCircle, () -> Settings.auraCircle = !Settings.auraCircle);
-            cycle("Aura radius", () -> Settings.auraRadius + " blocks", () -> {
-                int idx = 0; for (int i = 0; i < AURA_RADII.length; i++) if (AURA_RADII[i] == Settings.auraRadius) idx = i;
-                Settings.auraRadius = AURA_RADII[(idx + 1) % AURA_RADII.length];
-            });
             toggle("Kill Aura", () -> Settings.killAura, () -> Settings.killAura = !Settings.killAura);
-            cycle("Kill range", () -> Settings.killRange + " blocks", () -> {
+            cycle("Kill range", () -> Settings.killRange + " bl", () -> {
                 int idx = 0; for (int i = 0; i < KILL_RANGES.length; i++) if (KILL_RANGES[i] == Settings.killRange) idx = i;
                 Settings.killRange = KILL_RANGES[(idx + 1) % KILL_RANGES.length];
             });
@@ -99,16 +103,15 @@ public class UltraScreen extends Screen {
             toggle("Module list", () -> Settings.moduleList, () -> Settings.moduleList = !Settings.moduleList);
             toggle("Fullbright", () -> Settings.fullbright, () -> Settings.fullbright = !Settings.fullbright);
             toggle("Inventory HUD", () -> Settings.inventoryHud, () -> Settings.inventoryHud = !Settings.inventoryHud);
+            toggle("Radar", () -> Settings.radar, () -> Settings.radar = !Settings.radar);
         }
     }
 
     @Override
     protected void init() {
-        ph = 50 + items.size() * 28 + 10; // recalc below after buildItems
-        // Calculate ph from items count
         buildItems();
         int itemCount = items.size();
-        ph = 50 + itemCount * 28 + 10;
+        ph = 50 + Math.min(itemCount, 12) * 28 + 10;
         if (ph > this.height - 20) ph = this.height - 20;
         px = (this.width - W) / 2;
         py = (this.height - ph) / 2;
@@ -124,28 +127,39 @@ public class UltraScreen extends Screen {
         for (Item it : items) {
             it.x = cx; it.y = y; it.w = cw; it.h = 24;
             final Item f = it;
-            this.addDrawableChild(ButtonWidget.builder(Text.literal(""), b -> f.click.run())
-                    .dimensions(cx, y, cw, 24).build());
+            this.addDrawableChild(ButtonWidget.builder(Text.literal(""), b -> {
+                if (b.getX() + b.getWidth() - 14 <= 0) return;
+                f.click.run();
+            }).dimensions(cx, y, cw - 18, 24).build());
             y += 28;
         }
     }
 
     @Override
     public boolean mouseClicked(double mx, double my, int button) {
-        // Right-click on item row → bind popup
-        if (button == 1) {
+        // Left-click on bind square (last 16px of each row)
+        if (button == 0) {
             for (Item it : items) {
-                if (mx >= it.x && mx < it.x + it.w && my >= it.y && my < it.y + it.h) {
-                    bindingItem = it; return true;
+                int sqX = it.x + it.w - 16, sqY = it.y + 4;
+                if (mx >= sqX && mx < sqX + 16 && my >= sqY && my < sqY + 16) {
+                    bindingItem = it;
+                    return true;
                 }
             }
-        }
-        // Left-click on inventory HUD → drag
-        if (button == 0 && Settings.inventoryHud) {
-            int hudX = Settings.inventoryHudX, hudY = Settings.inventoryHudY;
-            int hudW = 9 * 18 + 8, hudH = 26;
-            if (mx >= hudX && mx < hudX + hudW && my >= hudY && my < hudY + hudH) {
-                draggingHud = true; dragOffX = (int)mx - hudX; dragOffY = (int)my - hudY; return true;
+            // Drag inventory HUD
+            if (Settings.inventoryHud) {
+                int hudX = Settings.inventoryHudX, hudY = Settings.inventoryHudY;
+                int hudW = 9 * 18 + 8, hudH = 26;
+                if (mx >= hudX && mx < hudX + hudW && my >= hudY && my < hudY + hudH) {
+                    draggingHud = true; dragOffX = (int)mx - hudX; dragOffY = (int)my - hudY; return true;
+                }
+            }
+            // Drag radar
+            if (Settings.radar) {
+                int rx = Settings.radarX, ry = Settings.radarY;
+                if (mx >= rx && mx < rx + 80 && my >= ry && my < ry + 80) {
+                    draggingRadar = true; dragRadarX = (int)mx - rx; dragRadarY = (int)my - ry; return true;
+                }
             }
         }
         return super.mouseClicked(mx, my, button);
@@ -158,12 +172,17 @@ public class UltraScreen extends Screen {
             Settings.inventoryHudY = (int)my - dragOffY;
             return true;
         }
+        if (draggingRadar && button == 0) {
+            Settings.radarX = (int)mx - dragRadarX;
+            Settings.radarY = (int)my - dragRadarY;
+            return true;
+        }
         return super.mouseDragged(mx, my, button, dx, dy);
     }
 
     @Override
     public boolean mouseReleased(double mx, double my, int button) {
-        if (button == 0) draggingHud = false;
+        if (button == 0) { draggingHud = false; draggingRadar = false; }
         return super.mouseReleased(mx, my, button);
     }
 
@@ -172,17 +191,13 @@ public class UltraScreen extends Screen {
         if (bindingItem != null) {
             if (keyCode == GLFW.GLFW_KEY_ESCAPE) Settings.binds.remove(bindingItem.label);
             else Settings.binds.put(bindingItem.label, keyCode);
-            bindingItem = null; return true;
+            bindingItem = null;
+            return true;
         }
         return super.keyPressed(keyCode, scanCode, modifiers);
     }
 
-    private static void rr(DrawContext c, int x, int y, int w, int h, int col) {
-        c.fill(x + 1, y, x + w - 1, y + h, col);
-        c.fill(x, y + 1, x + w, y + h - 1, col);
-    }
-
-    // no @Override on purpose
+    // no @Override on purpose — signature changed in 1.21.x
     public void renderBackground(DrawContext ctx, int mouseX, int mouseY, float delta) {
         ctx.fill(0, 0, this.width, this.height, 0xAA000000);
         ctx.fill(px, py, px + W, py + ph, 0xFF1B1B1B);
@@ -207,9 +222,9 @@ public class UltraScreen extends Screen {
             boolean hover = mouseX >= bx && mouseX < bx + bw && mouseY >= by && mouseY < by + 24;
             ctx.fill(bx, by, bx + bw, by + 24, 0xFF151515);
             if (i == tab) {
-                rr(ctx, bx, by, bw, 24, 0xFF262626);
+                UltraVisualClient.rr(ctx, bx, by, bw, 24, 0xFF262626);
                 ctx.fill(bx, by + 4, bx + 3, by + 20, ACCENT);
-            } else if (hover) rr(ctx, bx, by, bw, 24, 0xFF1E1E1E);
+            } else if (hover) UltraVisualClient.rr(ctx, bx, by, bw, 24, 0xFF1E1E1E);
             ctx.drawText(tr, Text.literal(TABS[i]), bx + 12, by + 8, i == tab ? 0xFFFFFFFF : 0xFF999999, false);
         }
 
@@ -218,52 +233,60 @@ public class UltraScreen extends Screen {
             boolean hover = mouseX >= it.x && mouseX < it.x + it.w && mouseY >= it.y && mouseY < it.y + it.h;
             boolean isBinding = it == bindingItem;
             ctx.fill(it.x, it.y, it.x + it.w, it.y + it.h, 0xFF1B1B1B);
-            rr(ctx, it.x, it.y, it.w, it.h, isBinding ? ACCENT : (hover ? 0xFF303030 : 0xFF262626));
+            UltraVisualClient.rr(ctx, it.x, it.y, it.w, it.h, isBinding ? ACCENT : (hover ? 0xFF303030 : 0xFF262626));
 
             // Label
             ctx.drawText(tr, Text.literal(it.label), it.x + 10, it.y + 8, 0xFFFFFFFF, false);
 
-            // Bind key indicator
+            // Current bind shown after label
             Integer bind = Settings.binds.get(it.label);
             if (bind != null && bind != GLFW.GLFW_KEY_UNKNOWN) {
-                String bindStr = "[" + UltraVisualClient.getKeyName(bind) + "]";
+                String bindStr = " [" + UltraVisualClient.getKeyName(bind) + "]";
                 int lw = tr.getWidth(it.label);
-                ctx.drawText(tr, Text.literal(bindStr), it.x + 12 + lw, it.y + 8, 0xFF555555, false);
+                ctx.drawText(tr, Text.literal(bindStr), it.x + 10 + lw, it.y + 8, 0xFF00CED1, false);
             }
 
-            // Right-click hint
-            ctx.drawText(tr, Text.literal("RMB=bind"), it.x + it.w - tr.getWidth("RMB=bind") - 45, it.y + 8, 0xFF444444, false);
+            // Bind square (right side, 16x16)
+            int sqX = it.x + it.w - 16, sqY = it.y + 4;
+            boolean sqHover = mouseX >= sqX && mx < sqX + 16 && mouseY >= sqY && mouseY < sqY + 16;
+            ctx.fill(sqX, sqY, sqX + 14, sqY + 14,
+                    isBinding ? 0xFFFFAA00 : (sqHover ? 0xFF555555 : 0xFF333333));
+            ctx.drawText(tr, Text.literal("B"), sqX + 3, sqY + 3,
+                    isBinding ? 0xFF000000 : 0xFF888888, false);
 
-            // Toggle / cycle value
+            // Toggle / cycle
             if (it.on != null) {
                 boolean on = it.on.getAsBoolean();
-                int sx = it.x + it.w - 38, sy = it.y + 6;
-                rr(ctx, sx, sy, 28, 12, on ? ACCENT : 0xFF444444);
+                int sx = it.x + it.w - 38 - 18, sy = it.y + 6;
+                UltraVisualClient.rr(ctx, sx, sy, 28, 12, on ? ACCENT : 0xFF444444);
                 ctx.fill(sx + (on ? 18 : 2), sy + 2, sx + (on ? 26 : 10), sy + 10, 0xFFFFFFFF);
             } else {
                 String v = it.value.get();
-                int vw = tr.getWidth(v) + 14, vx = it.x + it.w - vw - 8;
-                rr(ctx, vx, it.y + 4, vw, 16, 0xFF333333);
+                int vw = tr.getWidth(v) + 14;
+                int vx = it.x + it.w - vw - 8 - 18;
+                UltraVisualClient.rr(ctx, vx, it.y + 4, vw, 16, 0xFF333333);
                 ctx.drawText(tr, Text.literal(v), vx + 7, it.y + 8, ACCENT, false);
             }
         }
 
-        // Bind popup overlay
+        // Bind popup
         if (bindingItem != null) {
-            ctx.fill(0, 0, this.width, this.height, 0x99000000);
-            String msg1 = "Press a key to bind:";
-            String msg2 = bindingItem.label;
-            String msg3 = "ESC = unbind";
-            Integer cur = Settings.binds.get(bindingItem.label);
-            String msg4 = cur != null ? "Current: [" + UltraVisualClient.getKeyName(cur) + "]" : "Current: None";
-            int popW = 200, popH = 60;
+            ctx.fill(0, 0, this.width, this.height, 0x88000000);
+            int popW = 220, popH = 64;
             int popX = (this.width - popW) / 2, popY = (this.height - popH) / 2;
-            rr(ctx, popX, popY, popW, popH, 0xFF2B2B2B);
+            UltraVisualClient.rr(ctx, popX, popY, popW, popH, 0xFF2B2B2B);
             ctx.fill(popX + 1, popY, popX + popW - 1, popY + 2, ACCENT);
-            ctx.drawText(tr, Text.literal(msg1), popX + 10, popY + 8, 0xFFAAAAAA, false);
-            ctx.drawText(tr, Text.literal(msg2).formatted(Formatting.BOLD), popX + 10, popY + 20, 0xFFFFFFFF, false);
-            ctx.drawText(tr, Text.literal(msg4), popX + 10, popY + 34, ACCENT, false);
-            ctx.drawText(tr, Text.literal(msg3), popX + 10, popY + 48, 0xFF666666, false);
+            ctx.drawText(tr, Text.literal("Bind key for:"), popX + 10, popY + 8, 0xFFAAAAAA, false);
+            ctx.drawText(tr, Text.literal(bindingItem.label).formatted(Formatting.BOLD), popX + 10, popY + 22, 0xFFFFFFFF, false);
+            Integer cur = Settings.binds.get(bindingItem.label);
+            String curStr = "Current: " + (cur != null ? UltraVisualClient.getKeyName(cur) : "None");
+            ctx.drawText(tr, Text.literal(curStr), popX + 10, popY + 36, ACCENT, false);
+            ctx.drawText(tr, Text.literal("ESC = remove bind"), popX + 10, popY + 50, 0xFF666666, false);
         }
+    }
+
+    // workaround for Java access in inner lambda
+    private static boolean mx(double mx, int sqX, int sqW) {
+        return mx >= sqX && mx < sqX + sqW;
     }
 }
