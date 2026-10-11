@@ -13,9 +13,11 @@ import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
+import net.minecraft.entity.Entity;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.text.Text;
 import net.minecraft.util.ActionResult;
+import net.minecraft.util.Hand;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.MathHelper;
 import org.lwjgl.glfw.GLFW;
@@ -36,6 +38,12 @@ public class UltraVisualClient implements ClientModInitializer {
         public static boolean targetHud = true;
 
         public static boolean hat = true;
+
+        public static boolean auraCircle = true;
+        public static float auraRadius = 3.0f;
+
+        public static boolean killAura = false;
+        public static float killRange = 3.0f;
 
         public static boolean watermark = true;
         public static boolean coords = true;
@@ -96,7 +104,26 @@ public class UltraVisualClient implements ClientModInitializer {
             }
         });
 
-        // remember who WE hit (only our own client player)
+        // kill aura tick
+        ClientTickEvents.END_CLIENT_TICK.register(client -> {
+            if (!Settings.killAura || client.player == null || client.world == null) return;
+            if (client.currentScreen != null) return;
+            if (client.player.getAttackCooldownProgress(0.5f) < 1.0f) return;
+            LivingEntity nearest = null;
+            double bestDist = Settings.killRange + 0.5;
+            for (Entity e : client.world.getEntities()) {
+                if (e == client.player) continue;
+                if (!(e instanceof LivingEntity le)) continue;
+                if (!le.isAlive()) continue;
+                double dist = client.player.distanceTo(le);
+                if (dist < bestDist) { bestDist = dist; nearest = le; }
+            }
+            if (nearest != null) {
+                client.interactionManager.attackEntity(client.player, nearest);
+                client.player.swingHand(Hand.MAIN_HAND);
+            }
+        });
+
         AttackEntityCallback.EVENT.register((player, world, hand, entity, hitResult) -> {
             if (player == MinecraftClient.getInstance().player && entity instanceof LivingEntity le) {
                 lastHit = le;
@@ -143,6 +170,8 @@ public class UltraVisualClient implements ClientModInitializer {
             if (Settings.targetEsp) names.add("Target ESP");
             if (Settings.targetHud) names.add("Target HUD");
             if (Settings.hat) names.add("China Hat");
+            if (Settings.auraCircle) names.add("Aura Circle");
+            if (Settings.killAura) names.add("Kill Aura");
             int ry = 6;
             for (String n : names) {
                 int w = tr.getWidth(n) + 12;
@@ -154,7 +183,6 @@ public class UltraVisualClient implements ClientModInitializer {
             }
         }
 
-        // Target HUD: only for 6 seconds after we hit something
         LivingEntity t = lastHit;
         if (Settings.targetHud && t != null && t.isAlive()
                 && System.currentTimeMillis() - lastHitTime < 6000L) {
