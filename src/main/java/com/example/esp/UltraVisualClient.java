@@ -379,7 +379,7 @@ public class UltraVisualClient implements ClientModInitializer {
                 ItemStack stack = mc.player.getInventory().getStack(i);
                 int ix = hudX + pad + i * slotSize, iy = hudY + pad;
                 ctx.fill(ix, iy, ix + slotSize - 1, iy + slotSize - 1, 0xFF2A2A2A);
-                if (i == mc.player.getInventory().selectedSlot)
+                if (i == mc.player.getInventory().getSelectedSlot())
                     ctx.fill(ix, iy, ix + slotSize - 1, iy + 1, 0xFFFFFFFF);
                 ctx.drawItem(stack, ix + 1, iy + 1);
             }
