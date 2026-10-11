@@ -28,7 +28,6 @@ public class UltraVisualClient implements ClientModInitializer {
     public static final int ACCENT = 0xFF00CED1;
 
     public static class Settings {
-        // Visuals
         public static boolean esp = true;
         public static int boxStyle = 0;
         public static int range = 500;
@@ -36,13 +35,13 @@ public class UltraVisualClient implements ClientModInitializer {
         public static boolean showInvisible = true;
         public static boolean tracers = true;
         public static boolean nametags = true;
+        public static boolean healthBars = true;
         public static boolean trail = false;
         public static boolean jumpCircle = true;
         public static boolean hat = true;
         public static boolean auraCircle = true;
         public static float auraRadius = 3.0f;
 
-        // Target
         public static boolean targetEsp = true;
         public static int targetColor = 0;
         public static float ringSize = 0.8f;
@@ -52,7 +51,6 @@ public class UltraVisualClient implements ClientModInitializer {
         public static float killRange = 3.0f;
         public static float killCps = 8.0f;
 
-        // HUD
         public static boolean watermark = true;
         public static boolean coords = true;
         public static boolean moduleList = true;
@@ -60,6 +58,9 @@ public class UltraVisualClient implements ClientModInitializer {
         public static boolean inventoryHud = true;
         public static int inventoryHudX = 100;
         public static int inventoryHudY = 100;
+        public static boolean radar = true;
+        public static int radarX = 10;
+        public static int radarY = 200;
 
         public static final String[] STYLE_NAMES = {"Fill", "Outline", "Both"};
         public static final String[] ESP_NAMES = {"Cyan", "Pink", "Purple", "Green", "Orange"};
@@ -68,8 +69,6 @@ public class UltraVisualClient implements ClientModInitializer {
                 {0.7f, 0.3f, 1.0f}, {0.2f, 1.0f, 0.3f}, {1.0f, 0.6f, 0.1f}
         };
         public static final String[] TARGET_NAMES = {"Health", "Rainbow", "Cyan", "Pink"};
-
-        // Binds: label → GLFW key code
         public static final Map<String, Integer> binds = new HashMap<>();
     }
 
@@ -77,22 +76,14 @@ public class UltraVisualClient implements ClientModInitializer {
     public static LivingEntity lastHit = null;
     public static long lastHitTime = 0L;
     public static long lastAttackMs = 0L;
-
-    // Trail
     public static final LinkedList<Vec3d> trailPoints = new LinkedList<>();
     public static final LinkedList<Long> trailTimes = new LinkedList<>();
     private static Vec3d lastTrailPos = null;
-
-    // Jump circle
     public static boolean wasOnGround = true;
     public static Vec3d jumpPos = null;
     public static long jumpTime = 0L;
-
-    // Fullbright
     private static double savedGamma = 1.0;
     private static boolean gammaSet = false;
-
-    // Bind prev state for edge-detection
     private static final Map<String, Boolean> bindPrevState = new HashMap<>();
 
     private static KeyBinding reg(String name, int key, KeyBinding.Category cat) {
@@ -115,15 +106,17 @@ public class UltraVisualClient implements ClientModInitializer {
             case "Kill Aura" -> { Settings.killAura = !Settings.killAura; msg(mc, "Kill Aura", Settings.killAura); }
             case "Tracers" -> { Settings.tracers = !Settings.tracers; msg(mc, "Tracers", Settings.tracers); }
             case "Nametags" -> { Settings.nametags = !Settings.nametags; msg(mc, "Nametags", Settings.nametags); }
+            case "Health bars" -> { Settings.healthBars = !Settings.healthBars; msg(mc, "Health Bars", Settings.healthBars); }
             case "Trail" -> { Settings.trail = !Settings.trail; msg(mc, "Trail", Settings.trail); }
             case "Jump circle" -> { Settings.jumpCircle = !Settings.jumpCircle; msg(mc, "Jump Circle", Settings.jumpCircle); }
             case "China hat (me)" -> { Settings.hat = !Settings.hat; msg(mc, "China Hat", Settings.hat); }
             case "Show invisible" -> { Settings.showInvisible = !Settings.showInvisible; msg(mc, "Show Invisible", Settings.showInvisible); }
             case "Fullbright" -> { Settings.fullbright = !Settings.fullbright; msg(mc, "Fullbright", Settings.fullbright); }
-            case "Watermark" -> { Settings.watermark = !Settings.watermark; }
-            case "Coordinates" -> { Settings.coords = !Settings.coords; }
-            case "Module list" -> { Settings.moduleList = !Settings.moduleList; }
-            case "Inventory HUD" -> { Settings.inventoryHud = !Settings.inventoryHud; }
+            case "Radar" -> { Settings.radar = !Settings.radar; msg(mc, "Radar", Settings.radar); }
+            case "Watermark" -> Settings.watermark = !Settings.watermark;
+            case "Coordinates" -> Settings.coords = !Settings.coords;
+            case "Module list" -> Settings.moduleList = !Settings.moduleList;
+            case "Inventory HUD" -> Settings.inventoryHud = !Settings.inventoryHud;
         }
     }
 
@@ -144,7 +137,7 @@ public class UltraVisualClient implements ClientModInitializer {
 
             if (client.player == null || client.world == null) return;
 
-            // Custom binds (edge detection)
+            // Custom binds
             long window = client.getWindow().getHandle();
             for (Map.Entry<String, Integer> entry : Settings.binds.entrySet()) {
                 String label = entry.getKey();
@@ -166,7 +159,7 @@ public class UltraVisualClient implements ClientModInitializer {
 
             // Trail
             if (Settings.trail) {
-                Vec3d pos = client.player.getPos();
+                Vec3d pos = new Vec3d(client.player.getX(), client.player.getY(), client.player.getZ());
                 if (lastTrailPos == null || pos.distanceTo(lastTrailPos) > 0.3) {
                     trailPoints.addFirst(pos); trailTimes.addFirst(System.currentTimeMillis());
                     lastTrailPos = pos;
@@ -180,12 +173,15 @@ public class UltraVisualClient implements ClientModInitializer {
             // Jump circle
             if (Settings.jumpCircle) {
                 boolean onGround = client.player.isOnGround();
-                if (wasOnGround && !onGround) { jumpPos = client.player.getPos(); jumpTime = System.currentTimeMillis(); }
+                if (wasOnGround && !onGround) {
+                    jumpPos = new Vec3d(client.player.getX(), client.player.getY(), client.player.getZ());
+                    jumpTime = System.currentTimeMillis();
+                }
                 wasOnGround = onGround;
             }
         });
 
-        // Kill aura with CPS
+        // Kill aura
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (!Settings.killAura || client.player == null || client.world == null || client.currentScreen != null) return;
             long now = System.currentTimeMillis();
@@ -216,22 +212,19 @@ public class UltraVisualClient implements ClientModInitializer {
         HudRenderCallback.EVENT.register((ctx, tickCounter) -> hud(ctx));
     }
 
-    // World to screen projection
     public static int[] worldToScreen(Vec3d world, Vec3d cam, float pitch, float yaw, int fov, int sw, int sh) {
         double dx = world.x - cam.x, dy = world.y - cam.y, dz = world.z - cam.z;
-        float yRad = yaw * (float) Math.PI / 180f;
-        float pRad = pitch * (float) Math.PI / 180f;
+        float yRad = yaw * (float)Math.PI / 180f, pRad = pitch * (float)Math.PI / 180f;
         float sinY = MathHelper.sin(yRad), cosY = MathHelper.cos(yRad);
         float sinP = MathHelper.sin(pRad), cosP = MathHelper.cos(pRad);
-        double cx = dx * cosY + dz * sinY;
-        double cy = dy;
+        double cx2 = dx * cosY + dz * sinY;
         double czPre = dx * sinY - dz * cosY;
-        double finalY = cy * cosP - czPre * sinP;
-        double finalZ = cy * sinP + czPre * cosP;
-        double finalX = cx;
+        double finalY = dy * cosP - czPre * sinP;
+        double finalZ = dy * sinP + czPre * cosP;
+        double finalX = cx2;
         if (finalZ >= -0.01) return null;
-        float f = 1f / (float) Math.tan(fov * Math.PI / 360.0);
-        float aspect = (float) sw / sh;
+        float f = 1f / (float)Math.tan(fov * Math.PI / 360.0);
+        float aspect = (float)sw / sh;
         int sx = (int)(sw / 2f + finalX / (-finalZ) * f / aspect * sw / 2f);
         int sy = (int)(sh / 2f - finalY / (-finalZ) * f * sh / 2f);
         return new int[]{sx, sy};
@@ -243,25 +236,20 @@ public class UltraVisualClient implements ClientModInitializer {
         if (n != null) return n.toUpperCase();
         return switch (key) {
             case GLFW.GLFW_KEY_RIGHT_SHIFT -> "RSHIFT"; case GLFW.GLFW_KEY_LEFT_SHIFT -> "LSHIFT";
-            case GLFW.GLFW_KEY_RIGHT_CONTROL -> "RCTRL"; case GLFW.GLFW_KEY_LEFT_CONTROL -> "LCTRL";
-            case GLFW.GLFW_KEY_RIGHT_ALT -> "RALT"; case GLFW.GLFW_KEY_LEFT_ALT -> "LALT";
             case GLFW.GLFW_KEY_SPACE -> "SPACE"; case GLFW.GLFW_KEY_TAB -> "TAB";
             case GLFW.GLFW_KEY_F1 -> "F1"; case GLFW.GLFW_KEY_F2 -> "F2";
             case GLFW.GLFW_KEY_F3 -> "F3"; case GLFW.GLFW_KEY_F4 -> "F4";
             case GLFW.GLFW_KEY_F5 -> "F5"; case GLFW.GLFW_KEY_F6 -> "F6";
-            case GLFW.GLFW_KEY_F7 -> "F7"; case GLFW.GLFW_KEY_F8 -> "F8";
-            case GLFW.GLFW_KEY_F9 -> "F9"; case GLFW.GLFW_KEY_F10 -> "F10";
-            case GLFW.GLFW_KEY_F11 -> "F11"; case GLFW.GLFW_KEY_F12 -> "F12";
             default -> "K" + key;
         };
     }
 
-    private static void rr(DrawContext c, int x, int y, int w, int h, int col) {
+    static void rr(DrawContext c, int x, int y, int w, int h, int col) {
         c.fill(x + 1, y, x + w - 1, y + h, col);
         c.fill(x, y + 1, x + w, y + h - 1, col);
     }
 
-    private static void drawLine(DrawContext ctx, int x1, int y1, int x2, int y2, int color) {
+    static void drawLine(DrawContext ctx, int x1, int y1, int x2, int y2, int color) {
         int dx = Math.abs(x2 - x1), dy = Math.abs(y2 - y1);
         int steps = Math.max(dx, dy);
         if (steps == 0) return;
@@ -289,7 +277,8 @@ public class UltraVisualClient implements ClientModInitializer {
         }
 
         if (Settings.coords) {
-            String s = String.format("XYZ  %.0f  %.0f  %.0f", mc.player.getX(), mc.player.getY(), mc.player.getZ());
+            String s = String.format("XYZ  %.0f  %.0f  %.0f",
+                    mc.player.getX(), mc.player.getY(), mc.player.getZ());
             int w = tr.getWidth(s) + 14;
             rr(ctx, 6, y, w, 16, 0xCC141414);
             ctx.drawText(tr, Text.literal(s), 13, y + 4, 0xFFDDDDDD, false);
@@ -305,8 +294,10 @@ public class UltraVisualClient implements ClientModInitializer {
             if (Settings.killAura) names.add("Kill Aura");
             if (Settings.tracers) names.add("Tracers");
             if (Settings.nametags) names.add("Nametags");
+            if (Settings.healthBars) names.add("Health Bars");
             if (Settings.trail) names.add("Trail");
             if (Settings.fullbright) names.add("Fullbright");
+            if (Settings.radar) names.add("Radar");
             int ry = 6;
             for (String n : names) {
                 int w = tr.getWidth(n) + 12;
@@ -318,16 +309,17 @@ public class UltraVisualClient implements ClientModInitializer {
             }
         }
 
-        // Tracers + Nametags
-        if ((Settings.tracers || Settings.nametags) && mc.gameRenderer != null) {
+        // Tracers + Nametags + Health bars
+        if ((Settings.tracers || Settings.nametags || Settings.healthBars) && mc.gameRenderer != null) {
             Camera cam = mc.gameRenderer.getCamera();
             Vec3d camPos = cam.getCameraPos();
             float pitch = cam.getPitch(), yawC = cam.getYaw();
             int fov = mc.options.getFov().getValue();
             int cx = sw / 2, cy = sh / 2;
+            float time = (System.currentTimeMillis() % 4000L) / 4000.0f;
             for (var p : mc.world.getPlayers()) {
                 if (p == mc.player) continue;
-                Vec3d headPos = p.getPos().add(0, p.getHeight() * 0.9, 0);
+                Vec3d headPos = new Vec3d(p.getX(), p.getY() + p.getHeight() * 0.9, p.getZ());
                 int[] screen = worldToScreen(headPos, camPos, pitch, yawC, fov, sw, sh);
                 if (screen == null) continue;
                 int sx = screen[0], sy = screen[1];
@@ -336,13 +328,21 @@ public class UltraVisualClient implements ClientModInitializer {
                     float hp = p.getHealth(), maxHp = p.getMaxHealth();
                     int hpCol = 0xFF000000 | MathHelper.hsvToRgb(0.33f * (hp / Math.max(1f, maxHp)), 1f, 1f);
                     String name = p.getName().getString();
-                    String hpStr = String.format("%.0f♥", hp);
+                    String hpStr = String.format("%.0f HP", hp);
                     String dist = String.format("%.0fm", p.distanceTo(mc.player));
                     int nw = Math.max(tr.getWidth(name), tr.getWidth(hpStr)) + 8;
-                    rr(ctx, sx - nw / 2, sy - 24, nw, 30, 0xAA141414);
-                    ctx.drawText(tr, Text.literal(name), sx - tr.getWidth(name) / 2, sy - 22, 0xFFFFFFFF, false);
-                    ctx.drawText(tr, Text.literal(hpStr), sx - tr.getWidth(hpStr) / 2, sy - 12, hpCol, false);
-                    ctx.drawText(tr, Text.literal(dist), sx - tr.getWidth(dist) / 2, sy - 2, 0xFFAAAAAA, false);
+                    rr(ctx, sx - nw / 2, sy - 26, nw, 30, 0xAA141414);
+                    ctx.drawText(tr, Text.literal(name), sx - tr.getWidth(name) / 2, sy - 24, 0xFFFFFFFF, false);
+                    ctx.drawText(tr, Text.literal(hpStr), sx - tr.getWidth(hpStr) / 2, sy - 14, hpCol, false);
+                    ctx.drawText(tr, Text.literal(dist), sx - tr.getWidth(dist) / 2, sy - 4, 0xFF888888, false);
+                }
+                if (Settings.healthBars) {
+                    float hp = p.getHealth(), frac = MathHelper.clamp(hp / Math.max(1f, p.getMaxHealth()), 0f, 1f);
+                    int bw = 30, bh = 4;
+                    int bx = sx - bw / 2, by = sy - 30;
+                    ctx.fill(bx, by, bx + bw, by + bh, 0xFF333333);
+                    int col = 0xFF000000 | MathHelper.hsvToRgb(0.33f * frac, 1f, 1f);
+                    ctx.fill(bx, by, bx + (int)(bw * frac), by + bh, col);
                 }
             }
         }
@@ -382,6 +382,33 @@ public class UltraVisualClient implements ClientModInitializer {
                 if (i == mc.player.getInventory().selectedSlot)
                     ctx.fill(ix, iy, ix + slotSize - 1, iy + 1, 0xFFFFFFFF);
                 ctx.drawItem(stack, ix + 1, iy + 1);
+            }
+        }
+
+        // Radar
+        if (Settings.radar) {
+            int rx = Settings.radarX, ry2 = Settings.radarY;
+            int rs = 80;
+            rr(ctx, rx, ry2, rs, rs, 0xCC141414);
+            ctx.fill(rx + 1, ry2, rx + rs - 1, ry2 + 1, ACCENT);
+            int centerX = rx + rs / 2, centerY = ry2 + rs / 2;
+            ctx.fill(centerX - 1, centerY - 1, centerX + 1, centerY + 1, 0xFFFFFFFF);
+            float yaw = mc.player.getYaw();
+            for (var p : mc.world.getPlayers()) {
+                if (p == mc.player) continue;
+                double dx = p.getX() - mc.player.getX();
+                double dz = p.getZ() - mc.player.getZ();
+                double dist = Math.sqrt(dx * dx + dz * dz);
+                if (dist > Settings.range) continue;
+                double scale = (rs / 2.0 - 4) / Math.max(50.0, dist);
+                double rad = Math.toRadians(yaw);
+                double rotX = dx * Math.cos(rad) - dz * Math.sin(rad);
+                double rotZ = dx * Math.sin(rad) + dz * Math.cos(rad);
+                int dotX = (int)(centerX + rotX * scale);
+                int dotY = (int)(centerY + rotZ * scale);
+                dotX = MathHelper.clamp(dotX, rx + 2, rx + rs - 2);
+                dotY = MathHelper.clamp(dotY, ry2 + 2, ry2 + rs - 2);
+                ctx.fill(dotX - 1, dotY - 1, dotX + 1, dotY + 1, 0xFFFF4444);
             }
         }
     }
