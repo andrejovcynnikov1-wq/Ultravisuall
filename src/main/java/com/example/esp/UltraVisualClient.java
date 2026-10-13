@@ -54,7 +54,6 @@ public class UltraVisualClient implements ClientModInitializer {
         public static float killRange = 3.0f;
         public static float killCps = 8.0f;
 
-        // New from PulseVisuals
         public static boolean damageNumbers = true;
         public static boolean trajectoryPredict = true;
         public static boolean crosshairTarget = true;
@@ -80,7 +79,6 @@ public class UltraVisualClient implements ClientModInitializer {
         public static final Map<String, Integer> binds = new HashMap<>();
     }
 
-    // Damage numbers system
     public static class DamageNum {
         public Vec3d pos;
         public float damage;
@@ -96,10 +94,7 @@ public class UltraVisualClient implements ClientModInitializer {
     public static final List<DamageNum> damageNums = new ArrayList<>();
     private static final Map<Integer, Float> lastHealth = new HashMap<>();
 
-    // Trajectory points for projectile prediction
     public static final List<Vec3d> trajectoryPoints = new ArrayList<>();
-
-    // Crosshair target (from PulseVisuals logic)
     public static LivingEntity crosshairTarget = null;
 
     public static KeyBinding openKey, espKey, targetKey, hatKey;
@@ -170,7 +165,6 @@ public class UltraVisualClient implements ClientModInitializer {
 
             if (client.player == null || client.world == null) return;
 
-            // Custom binds
             long handle = client.getWindow().getHandle();
             for (Map.Entry<String, Integer> entry : Settings.binds.entrySet()) {
                 String label = entry.getKey();
@@ -182,7 +176,6 @@ public class UltraVisualClient implements ClientModInitializer {
                 bindPrevState.put(label, pressed);
             }
 
-            // Fullbright
             if (Settings.fullbright) {
                 if (!gammaSet) { savedGamma = client.options.getGamma().getValue(); gammaSet = true; }
                 client.options.getGamma().setValue(100.0);
@@ -190,7 +183,6 @@ public class UltraVisualClient implements ClientModInitializer {
                 client.options.getGamma().setValue(savedGamma); gammaSet = false;
             }
 
-            // Trail
             if (Settings.trail) {
                 Vec3d pos = new Vec3d(client.player.getX(), client.player.getY(), client.player.getZ());
                 if (lastTrailPos == null || pos.distanceTo(lastTrailPos) > 0.3) {
@@ -203,7 +195,6 @@ public class UltraVisualClient implements ClientModInitializer {
                 }
             } else { trailPoints.clear(); trailTimes.clear(); lastTrailPos = null; }
 
-            // Jump circle
             if (Settings.jumpCircle) {
                 boolean onGround = client.player.isOnGround();
                 if (wasOnGround && !onGround) {
@@ -213,7 +204,7 @@ public class UltraVisualClient implements ClientModInitializer {
                 wasOnGround = onGround;
             }
 
-            // Crosshair target (PulseVisuals logic)
+            // Crosshair target (adapted from PulseVisuals TargetHUD)
             if (Settings.crosshairTarget && client.crosshairTarget != null) {
                 if (client.crosshairTarget.getType() == HitResult.Type.ENTITY
                         && client.crosshairTarget instanceof EntityHitResult ehr
@@ -227,7 +218,7 @@ public class UltraVisualClient implements ClientModInitializer {
                 crosshairTarget = null;
             }
 
-            // Damage numbers: track health changes of nearby entities
+            // Damage numbers (adapted from PulseVisuals DamageNumberRenderer)
             if (Settings.damageNumbers) {
                 damageNums.removeIf(d -> d.age++ >= d.maxAge);
                 for (Entity e : client.world.getEntities()) {
@@ -246,7 +237,7 @@ public class UltraVisualClient implements ClientModInitializer {
                 }
             }
 
-            // Trajectory: PulseVisuals logic adapted
+            // Trajectory prediction (adapted from PulseVisuals TrajectoryRenderer)
             if (Settings.trajectoryPredict) {
                 trajectoryPoints.clear();
                 List<ProjectileEntity> projectiles = client.world.getEntitiesByClass(
@@ -261,7 +252,8 @@ public class UltraVisualClient implements ClientModInitializer {
                         if (d < minDist) { minDist = d; closest = p; }
                     }
                     if (closest != null) {
-                        Vec3d pos = closest.getPos();
+                        // Fixed: use getX/getY/getZ instead of getPos()
+                        Vec3d pos = new Vec3d(closest.getX(), closest.getY(), closest.getZ());
                         Vec3d vel = closest.getVelocity();
                         for (int i = 0; i < 30; i++) {
                             trajectoryPoints.add(pos);
@@ -275,7 +267,6 @@ public class UltraVisualClient implements ClientModInitializer {
             }
         });
 
-        // Kill aura
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (!Settings.killAura || client.player == null || client.world == null || client.currentScreen != null) return;
             long now = System.currentTimeMillis();
@@ -408,7 +399,6 @@ public class UltraVisualClient implements ClientModInitializer {
             }
         }
 
-        // Tracers + Nametags + Health bars
         if ((Settings.tracers || Settings.nametags || Settings.healthBars) && mc.gameRenderer != null) {
             Camera cam = mc.gameRenderer.getCamera();
             Vec3d camPos = cam.getCameraPos();
@@ -446,7 +436,7 @@ public class UltraVisualClient implements ClientModInitializer {
             }
         }
 
-        // Damage numbers (PulseVisuals adapted)
+        // Damage numbers
         if (Settings.damageNumbers && mc.gameRenderer != null) {
             Camera cam = mc.gameRenderer.getCamera();
             Vec3d camPos = cam.getCameraPos();
@@ -458,13 +448,13 @@ public class UltraVisualClient implements ClientModInitializer {
                 if (screen == null) continue;
                 int alpha = (int)(dn.alpha() * 255);
                 if (alpha <= 0) continue;
-                String text = dn.isCrit ? String.format("✦ %.1f", dn.damage) : String.format("%.1f", dn.damage);
+                String text = dn.isCrit ? String.format("✦%.1f", dn.damage) : String.format("%.1f", dn.damage);
                 int col = dn.isCrit ? (alpha << 24 | 0xFF4400) : (alpha << 24 | 0xFFAA00);
                 ctx.drawText(tr, Text.literal(text), screen[0] - tr.getWidth(text) / 2, screen[1], col, true);
             }
         }
 
-        // Trajectory dots (PulseVisuals adapted)
+        // Trajectory dots
         if (Settings.trajectoryPredict && !trajectoryPoints.isEmpty() && mc.gameRenderer != null) {
             Camera cam = mc.gameRenderer.getCamera();
             Vec3d camPos = cam.getCameraPos();
@@ -475,12 +465,11 @@ public class UltraVisualClient implements ClientModInitializer {
                 if (screen == null) continue;
                 float fade = 1.0f - (float) i / trajectoryPoints.size();
                 int alpha = (int)(fade * 180);
-                int col = (alpha << 24) | 0xFFFF44;
-                ctx.fill(screen[0] - 1, screen[1] - 1, screen[0] + 1, screen[1] + 1, col);
+                ctx.fill(screen[0] - 1, screen[1] - 1, screen[0] + 1, screen[1] + 1, (alpha << 24) | 0xFFFF44);
             }
         }
 
-        // Crosshair target HUD (PulseVisuals TargetHUD logic)
+        // Crosshair target HUD (from PulseVisuals TargetHUD)
         if (Settings.crosshairTarget && crosshairTarget != null && crosshairTarget.isAlive()) {
             int bx = sw / 2 - 65, by = sh / 2 + 30;
             float hp = crosshairTarget.getHealth();
@@ -495,12 +484,12 @@ public class UltraVisualClient implements ClientModInitializer {
             ctx.fill(bx + 8, by + 18, bx + 122, by + 23, 0xFF333333);
             int col = 0xFF000000 | MathHelper.hsvToRgb(0.33f * frac, 1f, 1f);
             ctx.fill(bx + 8, by + 18, bx + 8 + (int)(114 * frac), by + 23, col);
-            ctx.drawText(tr, Text.literal(String.format("%.1f / %.1f", hp, crosshairTarget.getMaxHealth())),
+            ctx.drawText(tr, Text.literal(String.format("%.1f / %.1f HP", hp, crosshairTarget.getMaxHealth())),
                     bx + 8, by + 28, 0xFFDDDDDD, false);
-            ctx.drawText(tr, Text.literal("🛡 " + armor), bx + 8, by + 38, 0xFFAAAAAA, false);
+            ctx.drawText(tr, Text.literal("Armor: " + armor), bx + 8, by + 38, 0xFFAAAAAA, false);
         }
 
-        // Old Target HUD (on hit)
+        // Target HUD on hit
         LivingEntity t = lastHit;
         if (Settings.targetHud && t != null && t.isAlive() && System.currentTimeMillis() - lastHitTime < 6000L) {
             int bx = sw / 2 + 24, by = sh / 2 + 24;
