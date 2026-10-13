@@ -14,11 +14,14 @@ import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.render.Camera;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.LivingEntity;
+import net.minecraft.entity.projectile.ProjectileEntity;
 import net.minecraft.item.ItemStack;
 import net.minecraft.text.Text;
 import net.minecraft.util.ActionResult;
 import net.minecraft.util.Hand;
 import net.minecraft.util.Identifier;
+import net.minecraft.util.hit.EntityHitResult;
+import net.minecraft.util.hit.HitResult;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.client.util.InputUtil;
@@ -51,6 +54,11 @@ public class UltraVisualClient implements ClientModInitializer {
         public static float killRange = 3.0f;
         public static float killCps = 8.0f;
 
+        // New from PulseVisuals
+        public static boolean damageNumbers = true;
+        public static boolean trajectoryPredict = true;
+        public static boolean crosshairTarget = true;
+
         public static boolean watermark = true;
         public static boolean coords = true;
         public static boolean moduleList = true;
@@ -71,6 +79,28 @@ public class UltraVisualClient implements ClientModInitializer {
         public static final String[] TARGET_NAMES = {"Health", "Rainbow", "Cyan", "Pink"};
         public static final Map<String, Integer> binds = new HashMap<>();
     }
+
+    // Damage numbers system
+    public static class DamageNum {
+        public Vec3d pos;
+        public float damage;
+        public boolean isCrit;
+        public int age;
+        public final int maxAge = 30;
+        DamageNum(Vec3d pos, float damage, boolean isCrit) {
+            this.pos = pos; this.damage = damage; this.isCrit = isCrit;
+        }
+        float alpha() { return 1.0f - (float) age / maxAge; }
+        float offsetY() { return age * 0.04f; }
+    }
+    public static final List<DamageNum> damageNums = new ArrayList<>();
+    private static final Map<Integer, Float> lastHealth = new HashMap<>();
+
+    // Trajectory points for projectile prediction
+    public static final List<Vec3d> trajectoryPoints = new ArrayList<>();
+
+    // Crosshair target (from PulseVisuals logic)
+    public static LivingEntity crosshairTarget = null;
 
     public static KeyBinding openKey, espKey, targetKey, hatKey;
     public static LivingEntity lastHit = null;
@@ -93,7 +123,7 @@ public class UltraVisualClient implements ClientModInitializer {
 
     private static void msg(MinecraftClient c, String name, boolean on) {
         if (c.player != null)
-            c.player.sendMessage(Text.literal("ULTRA VISUAL: " + name + (on ? " ON" : " OFF")), true);
+            c.player.sendMessage(Text.literal("UV: " + name + (on ? " ON" : " OFF")), true);
     }
 
     private static void triggerBind(String label, MinecraftClient mc) {
@@ -110,9 +140,12 @@ public class UltraVisualClient implements ClientModInitializer {
             case "Trail" -> { Settings.trail = !Settings.trail; msg(mc, "Trail", Settings.trail); }
             case "Jump circle" -> { Settings.jumpCircle = !Settings.jumpCircle; msg(mc, "Jump Circle", Settings.jumpCircle); }
             case "China hat (me)" -> { Settings.hat = !Settings.hat; msg(mc, "China Hat", Settings.hat); }
-            case "Show invisible" -> { Settings.showInvisible = !Settings.showInvisible; msg(mc, "Show Invisible", Settings.showInvisible); }
+            case "Show invisible" -> { Settings.showInvisible = !Settings.showInvisible; msg(mc, "Show Invis", Settings.showInvisible); }
             case "Fullbright" -> { Settings.fullbright = !Settings.fullbright; msg(mc, "Fullbright", Settings.fullbright); }
             case "Radar" -> { Settings.radar = !Settings.radar; msg(mc, "Radar", Settings.radar); }
+            case "Damage numbers" -> { Settings.damageNumbers = !Settings.damageNumbers; msg(mc, "Damage Nums", Settings.damageNumbers); }
+            case "Trajectory" -> { Settings.trajectoryPredict = !Settings.trajectoryPredict; msg(mc, "Trajectory", Settings.trajectoryPredict); }
+            case "Crosshair target" -> { Settings.crosshairTarget = !Settings.crosshairTarget; msg(mc, "XHair Target", Settings.crosshairTarget); }
             case "Watermark" -> Settings.watermark = !Settings.watermark;
             case "Coordinates" -> Settings.coords = !Settings.coords;
             case "Module list" -> Settings.moduleList = !Settings.moduleList;
@@ -137,7 +170,7 @@ public class UltraVisualClient implements ClientModInitializer {
 
             if (client.player == null || client.world == null) return;
 
-            // Custom binds via GLFW directly
+            // Custom binds
             long handle = client.getWindow().getHandle();
             for (Map.Entry<String, Integer> entry : Settings.binds.entrySet()) {
                 String label = entry.getKey();
@@ -178,6 +211,67 @@ public class UltraVisualClient implements ClientModInitializer {
                     jumpTime = System.currentTimeMillis();
                 }
                 wasOnGround = onGround;
+            }
+
+            // Crosshair target (PulseVisuals logic)
+            if (Settings.crosshairTarget && client.crosshairTarget != null) {
+                if (client.crosshairTarget.getType() == HitResult.Type.ENTITY
+                        && client.crosshairTarget instanceof EntityHitResult ehr
+                        && ehr.getEntity() instanceof LivingEntity le
+                        && le != client.player) {
+                    crosshairTarget = le;
+                } else {
+                    crosshairTarget = null;
+                }
+            } else {
+                crosshairTarget = null;
+            }
+
+            // Damage numbers: track health changes of nearby entities
+            if (Settings.damageNumbers) {
+                damageNums.removeIf(d -> d.age++ >= d.maxAge);
+                for (Entity e : client.world.getEntities()) {
+                    if (!(e instanceof LivingEntity le) || e == client.player) continue;
+                    if (client.player.distanceTo(le) > 32) continue;
+                    int id = le.getId();
+                    float prev = lastHealth.getOrDefault(id, le.getHealth());
+                    float curr = le.getHealth();
+                    if (curr < prev) {
+                        float dmg = prev - curr;
+                        boolean crit = dmg >= 4.0f;
+                        Vec3d pos = new Vec3d(le.getX(), le.getY() + le.getHeight() + 0.3, le.getZ());
+                        damageNums.add(new DamageNum(pos, dmg, crit));
+                    }
+                    lastHealth.put(id, curr);
+                }
+            }
+
+            // Trajectory: PulseVisuals logic adapted
+            if (Settings.trajectoryPredict) {
+                trajectoryPoints.clear();
+                List<ProjectileEntity> projectiles = client.world.getEntitiesByClass(
+                        ProjectileEntity.class,
+                        client.player.getBoundingBox().expand(32),
+                        e -> true);
+                if (!projectiles.isEmpty()) {
+                    ProjectileEntity closest = null;
+                    double minDist = Double.MAX_VALUE;
+                    for (ProjectileEntity p : projectiles) {
+                        double d = client.player.distanceTo(p);
+                        if (d < minDist) { minDist = d; closest = p; }
+                    }
+                    if (closest != null) {
+                        Vec3d pos = closest.getPos();
+                        Vec3d vel = closest.getVelocity();
+                        for (int i = 0; i < 30; i++) {
+                            trajectoryPoints.add(pos);
+                            vel = vel.add(0, -0.03, 0).multiply(0.99);
+                            pos = pos.add(vel);
+                        }
+                    }
+                }
+            } else {
+                trajectoryPoints.clear();
             }
         });
 
@@ -300,6 +394,9 @@ public class UltraVisualClient implements ClientModInitializer {
             if (Settings.trail) names.add("Trail");
             if (Settings.fullbright) names.add("Fullbright");
             if (Settings.radar) names.add("Radar");
+            if (Settings.damageNumbers) names.add("Dmg Numbers");
+            if (Settings.trajectoryPredict) names.add("Trajectory");
+            if (Settings.crosshairTarget) names.add("XHair Target");
             int ry = 6;
             for (String n : names) {
                 int w = tr.getWidth(n) + 12;
@@ -349,7 +446,61 @@ public class UltraVisualClient implements ClientModInitializer {
             }
         }
 
-        // Target HUD
+        // Damage numbers (PulseVisuals adapted)
+        if (Settings.damageNumbers && mc.gameRenderer != null) {
+            Camera cam = mc.gameRenderer.getCamera();
+            Vec3d camPos = cam.getCameraPos();
+            float pitch = cam.getPitch(), yawC = cam.getYaw();
+            int fov = mc.options.getFov().getValue();
+            for (DamageNum dn : damageNums) {
+                Vec3d pos = dn.pos.add(0, dn.offsetY(), 0);
+                int[] screen = worldToScreen(pos, camPos, pitch, yawC, fov, sw, sh);
+                if (screen == null) continue;
+                int alpha = (int)(dn.alpha() * 255);
+                if (alpha <= 0) continue;
+                String text = dn.isCrit ? String.format("✦ %.1f", dn.damage) : String.format("%.1f", dn.damage);
+                int col = dn.isCrit ? (alpha << 24 | 0xFF4400) : (alpha << 24 | 0xFFAA00);
+                ctx.drawText(tr, Text.literal(text), screen[0] - tr.getWidth(text) / 2, screen[1], col, true);
+            }
+        }
+
+        // Trajectory dots (PulseVisuals adapted)
+        if (Settings.trajectoryPredict && !trajectoryPoints.isEmpty() && mc.gameRenderer != null) {
+            Camera cam = mc.gameRenderer.getCamera();
+            Vec3d camPos = cam.getCameraPos();
+            float pitch = cam.getPitch(), yawC = cam.getYaw();
+            int fov = mc.options.getFov().getValue();
+            for (int i = 0; i < trajectoryPoints.size(); i++) {
+                int[] screen = worldToScreen(trajectoryPoints.get(i), camPos, pitch, yawC, fov, sw, sh);
+                if (screen == null) continue;
+                float fade = 1.0f - (float) i / trajectoryPoints.size();
+                int alpha = (int)(fade * 180);
+                int col = (alpha << 24) | 0xFFFF44;
+                ctx.fill(screen[0] - 1, screen[1] - 1, screen[0] + 1, screen[1] + 1, col);
+            }
+        }
+
+        // Crosshair target HUD (PulseVisuals TargetHUD logic)
+        if (Settings.crosshairTarget && crosshairTarget != null && crosshairTarget.isAlive()) {
+            int bx = sw / 2 - 65, by = sh / 2 + 30;
+            float hp = crosshairTarget.getHealth();
+            float frac = MathHelper.clamp(hp / Math.max(1f, crosshairTarget.getMaxHealth()), 0f, 1f);
+            int armor = crosshairTarget.getArmor();
+            double dist = mc.player.distanceTo(crosshairTarget);
+            rr(ctx, bx, by, 130, 48, 0xCC141414);
+            ctx.fill(bx + 1, by, bx + 129, by + 2, ACCENT);
+            ctx.drawText(tr, crosshairTarget.getName(), bx + 8, by + 5, 0xFFFFFFFF, false);
+            String distStr = String.format("%.1fm", dist);
+            ctx.drawText(tr, Text.literal(distStr), bx + 130 - tr.getWidth(distStr) - 6, by + 5, 0xFF888888, false);
+            ctx.fill(bx + 8, by + 18, bx + 122, by + 23, 0xFF333333);
+            int col = 0xFF000000 | MathHelper.hsvToRgb(0.33f * frac, 1f, 1f);
+            ctx.fill(bx + 8, by + 18, bx + 8 + (int)(114 * frac), by + 23, col);
+            ctx.drawText(tr, Text.literal(String.format("%.1f / %.1f", hp, crosshairTarget.getMaxHealth())),
+                    bx + 8, by + 28, 0xFFDDDDDD, false);
+            ctx.drawText(tr, Text.literal("🛡 " + armor), bx + 8, by + 38, 0xFFAAAAAA, false);
+        }
+
+        // Old Target HUD (on hit)
         LivingEntity t = lastHit;
         if (Settings.targetHud && t != null && t.isAlive() && System.currentTimeMillis() - lastHitTime < 6000L) {
             int bx = sw / 2 + 24, by = sh / 2 + 24;
