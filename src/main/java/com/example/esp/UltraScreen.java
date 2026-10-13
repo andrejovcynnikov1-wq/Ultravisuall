@@ -83,7 +83,10 @@ public class UltraScreen extends Screen {
                 Settings.ringSize = RING_SIZES[(idx + 1) % RING_SIZES.length];
             });
             toggle("Target HUD (on hit)", () -> Settings.targetHud, () -> Settings.targetHud = !Settings.targetHud);
+            toggle("Crosshair target", () -> Settings.crosshairTarget, () -> Settings.crosshairTarget = !Settings.crosshairTarget);
             toggle("Hit Flash", () -> Settings.hitFlash, () -> Settings.hitFlash = !Settings.hitFlash);
+            toggle("Damage numbers", () -> Settings.damageNumbers, () -> Settings.damageNumbers = !Settings.damageNumbers);
+            toggle("Trajectory", () -> Settings.trajectoryPredict, () -> Settings.trajectoryPredict = !Settings.trajectoryPredict);
             toggle("Kill Aura", () -> Settings.killAura, () -> Settings.killAura = !Settings.killAura);
             cycle("Kill range", () -> Settings.killRange + " bl", () -> {
                 int idx = 0;
@@ -124,10 +127,8 @@ public class UltraScreen extends Screen {
         for (Item it : items) {
             it.x = cx; it.y = y; it.w = cw; it.h = 24;
             final Item f = it;
-            // Main action button
             this.addDrawableChild(ButtonWidget.builder(Text.literal(""), b -> f.click.run())
                     .dimensions(cx, y, cw - 20, 24).build());
-            // Bind square button
             final String lbl = it.label;
             this.addDrawableChild(ButtonWidget.builder(Text.literal(""), b -> bindingLabel = lbl)
                     .dimensions(cx + cw - 18, y + 3, 16, 18).build());
@@ -135,21 +136,16 @@ public class UltraScreen extends Screen {
         }
     }
 
-    // Poll for key when binding is active
     @Override
     public void tick() {
         if (bindingLabel == null) return;
         long handle = MinecraftClient.getInstance().getWindow().getHandle();
         if (GLFW.glfwGetKey(handle, GLFW.GLFW_KEY_ESCAPE) == GLFW.GLFW_PRESS) {
-            Settings.binds.remove(bindingLabel);
-            bindingLabel = null;
-            return;
+            Settings.binds.remove(bindingLabel); bindingLabel = null; return;
         }
         for (int key = 32; key < 349; key++) {
             if (GLFW.glfwGetKey(handle, key) == GLFW.GLFW_PRESS) {
-                Settings.binds.put(bindingLabel, key);
-                bindingLabel = null;
-                return;
+                Settings.binds.put(bindingLabel, key); bindingLabel = null; return;
             }
         }
     }
@@ -206,7 +202,6 @@ public class UltraScreen extends Screen {
                         it.x + 10 + tr.getWidth(it.label), it.y + 8, ACCENT, false);
             }
 
-            // Bind square
             int sqX = it.x + it.w - 18, sqY = it.y + 3;
             boolean sqHover = mouseX >= sqX && mouseX < sqX + 16 && mouseY >= sqY && mouseY < sqY + 18;
             ctx.fill(sqX, sqY, sqX + 16, sqY + 18,
@@ -214,7 +209,6 @@ public class UltraScreen extends Screen {
             ctx.drawText(tr, Text.literal(isBinding ? "?" : "B"),
                     sqX + 4, sqY + 5, isBinding ? 0xFF000000 : 0xFF888888, false);
 
-            // Toggle or cycle
             if (it.on != null) {
                 boolean on = it.on.getAsBoolean();
                 int sx = it.x + it.w - 56, sy = it.y + 6;
@@ -229,7 +223,6 @@ public class UltraScreen extends Screen {
             }
         }
 
-        // Bind popup
         if (bindingLabel != null) {
             ctx.fill(0, 0, this.width, this.height, 0x88000000);
             int popW = 220, popH = 64;
